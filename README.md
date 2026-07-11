@@ -49,7 +49,7 @@ Open [http://localhost:3000](http://localhost:3000) → **Try demo: Mechanistic 
 | Frontend | Next.js 15 | Living Pages + mentor UI |
 | Backend | **Butterbase** | Auth, Postgres, storage, functions, deploy, hackathon submission |
 | Memory | **EverOS (EverMind)** | Lifelong learner + agent trajectory memory |
-| Parsing | Anthropic Claude | Sections, math, evidence chains, notebooks |
+| Parsing | **Nebius Token Factory** (Anthropic optional fallback) | Sections, math, evidence chains, notebooks |
 | Discovery | OpenAlex / Semantic Scholar / arXiv / Browser Use | Hybrid search |
 | Journals | Unpaywall + optional library proxy | Institutional access beyond preprints |
 | Sandboxes | Daytona / Pyodide | Runnable labs |
