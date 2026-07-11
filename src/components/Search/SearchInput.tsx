@@ -8,10 +8,8 @@ interface SearchInputProps {
 }
 
 const EXAMPLE_QUERIES = [
-  'mechanistic interpretability in large language models',
-  'diffusion models for protein structure',
-  'attention mechanisms in transformers',
-  'reinforcement learning from human feedback',
+  'How do sparse autoencoders compare for interpretability?',
+  'What approaches work for protein structure diffusion?',
 ]
 
 export default function SearchInput({ onSearch, isLoading = false }: SearchInputProps) {
@@ -28,47 +26,46 @@ export default function SearchInput({ onSearch, isLoading = false }: SearchInput
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <form onSubmit={handleSubmit} className="relative">
-        <input
-          type="text"
+    <div className="w-full">
+      <form onSubmit={handleSubmit}>
+        <label htmlFor="research-intent" className="sr-only">
+          Research question or topic
+        </label>
+        <textarea
+          id="research-intent"
           value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="Enter a research topic..."
-          className="w-full px-5 py-4 pr-32 rounded-xl text-base outline-none transition-all"
-          style={{
-            backgroundColor: '#111827',
-            color: '#e8e0d0',
-            border: '1px solid #1a2235',
-            fontFamily: 'IBM Plex Serif, serif',
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault()
+              if (query.trim() && !isLoading) onSearch(query.trim())
+            }
           }}
-          onFocus={e => { e.target.style.borderColor = '#00d4aa33' }}
-          onBlur={e => { e.target.style.borderColor = '#1a2235' }}
+          rows={3}
+          placeholder="What are you trying to understand, compare, or decide?"
+          className="ui-input min-h-[112px] resize-none px-4 py-3 text-[15px] leading-relaxed"
         />
-        <button
-          type="submit"
-          disabled={isLoading || !query.trim()}
-          className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-2 rounded-lg text-sm font-display transition-all"
-          style={{
-            backgroundColor: isLoading || !query.trim() ? '#1a2235' : '#00d4aa',
-            color: isLoading || !query.trim() ? '#9ca3af' : '#0a0e14',
-          }}
-        >
-          {isLoading ? '...' : 'Search'}
-        </button>
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <span className="hidden text-xs sm:block" style={{ color: 'var(--text-muted)' }}>
+            Enter to build a path · Shift+Enter for a new line
+          </span>
+          <button
+            type="submit"
+            disabled={isLoading || !query.trim()}
+            className="ui-button ui-button-primary ml-auto"
+          >
+            {isLoading ? 'Orienting…' : 'Build research path →'}
+          </button>
+        </div>
       </form>
 
-      <div className="mt-4 flex flex-wrap gap-2 justify-center">
-        {EXAMPLE_QUERIES.map(example => (
+      <div className="mt-4 flex flex-wrap gap-2">
+        {EXAMPLE_QUERIES.map((example) => (
           <button
             key={example}
+            type="button"
             onClick={() => handleExample(example)}
-            className="text-xs px-3 py-1.5 rounded-full transition-all"
-            style={{
-              backgroundColor: '#111827',
-              color: '#9ca3af',
-              border: '1px solid #1a2235',
-            }}
+            className="ui-chip text-left transition-colors hover:text-[var(--text)]"
           >
             {example}
           </button>

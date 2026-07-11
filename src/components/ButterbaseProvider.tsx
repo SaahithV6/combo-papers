@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getButterbase, isButterbaseConfigured, type ButterbaseClient } from '@/lib/butterbase'
+import { clearGuestUserId, getExistingGuestUserId } from '@/lib/learnerIdentity'
 
 type AuthUser = {
   id: string
@@ -51,6 +52,28 @@ function oauthCallbackUrl() {
   return `${window.location.origin}/auth/callback`
 }
 
+async function syncLearnerAccount(client: ButterbaseClient, user: AuthUser) {
+  const token = client.getAccessToken()
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }
+  const guestUserId = getExistingGuestUserId()
+  if (guestUserId) {
+    const migration = await fetch('/api/learner/migrate', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ guestUserId, userId: user.id }),
+    }).catch(() => {})
+    if (migration && 'ok' in migration && migration.ok) clearGuestUserId()
+  }
+  await fetch('/api/learner', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ userId: user.id, email: user.email }),
+  }).catch(() => {})
+}
+
 export default function ButterbaseProvider({ children }: { children: ReactNode }) {
   const configured = isButterbaseConfigured()
   const client = useMemo(() => (configured ? getButterbase() : null), [configured])
@@ -86,11 +109,7 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
         const next = asAuthUser(data)
         if (next) {
           setUser(next)
-          void fetch('/api/learner', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: next.id, email: next.email }),
-          }).catch(() => {})
+          void syncLearnerAccount(client, next)
         }
       } catch {
         // Demo mode / no session
@@ -104,11 +123,7 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
         )
         setUser(next)
         if (next?.id) {
-          void fetch('/api/learner', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ userId: next.id, email: next.email }),
-          }).catch(() => {})
+          void syncLearnerAccount(client, next)
         }
       })
       unsub = unsubscribe

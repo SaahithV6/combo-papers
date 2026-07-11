@@ -5,6 +5,13 @@ const pendingRuns = new Map<number, { resolve: (r: { stdout: string; stderr: str
 let messageId = 0
 
 const EXECUTION_TIMEOUT_MS = 30_000
+const READY_TIMEOUT_MS = 45_000
+
+function resetWorker() {
+  worker?.terminate()
+  worker = null
+  workerReady = false
+}
 
 function getWorker(): Worker {
   if (worker) return worker
@@ -55,6 +62,7 @@ function getWorker(): Worker {
     pendingReady = []
     for (const p of pendingRuns.values()) p.reject(new Error(e.message))
     pendingRuns.clear()
+    resetWorker()
   }
 
   // Critical: worker only becomes ready after an explicit init
@@ -66,7 +74,26 @@ function getWorker(): Worker {
 function waitForReady(): Promise<void> {
   if (workerReady) return Promise.resolve()
   return new Promise((resolve, reject) => {
-    pendingReady.push({ resolve, reject })
+    const pending = {
+      resolve: () => {
+        clearTimeout(timer)
+        resolve()
+      },
+      reject: (error: Error) => {
+        clearTimeout(timer)
+        reject(error)
+      },
+    }
+    const timer = window.setTimeout(() => {
+      pendingReady = pendingReady.filter((item) => item !== pending)
+      resetWorker()
+      reject(
+        new Error(
+          'The in-page Python runtime took too long to load. Download the notebook or open it in Colab.'
+        )
+      )
+    }, READY_TIMEOUT_MS)
+    pendingReady.push(pending)
   })
 }
 
@@ -79,6 +106,7 @@ export async function executePyodide(code: string): Promise<{ stdout: string; st
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       pendingRuns.delete(id)
+      resetWorker()
       reject(new Error(`Execution timed out after ${EXECUTION_TIMEOUT_MS / 1000} seconds`))
     }, EXECUTION_TIMEOUT_MS)
 

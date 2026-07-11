@@ -8,29 +8,38 @@ interface ReadingModeToggleProps {
 }
 
 const modes: { value: ReadingMode; label: string; description: string }[] = [
-  { value: 'skim', label: 'Skim', description: 'Abstract + figures + key results' },
+  { value: 'skim', label: 'Skim', description: 'Abstract + key results' },
   { value: 'read', label: 'Read', description: 'Full paper with interactive overlays' },
-  { value: 'deep-dive', label: 'Deep Dive', description: 'Full paper + notebooks + related' },
+  { value: 'deep-dive', label: 'Deep Dive', description: 'Evidence chains and denser tooling' },
 ]
 
 export default function ReadingModeToggle({ mode, onChange }: ReadingModeToggleProps) {
   return (
-    <div className="flex items-center gap-1 p-1 rounded-lg" style={{ backgroundColor: '#111827', border: '1px solid #1a2235' }}>
-      {modes.map((m) => (
-        <button
-          key={m.value}
-          onClick={() => onChange(m.value)}
-          title={m.description}
-          className={`px-3 py-1.5 rounded-md text-sm font-display transition-all ${
-            mode === m.value
-              ? 'text-background font-medium'
-              : 'text-text-muted hover:text-text'
-          }`}
-          style={mode === m.value ? { backgroundColor: '#00d4aa', color: '#0a0e14' } : {}}
-        >
-          {m.label}
-        </button>
-      ))}
+    <div
+      className="inline-flex items-center gap-1 rounded-lg border p-1"
+      style={{ borderColor: 'var(--border)', background: 'var(--background-raised)' }}
+      role="group"
+      aria-label="Reading mode"
+    >
+      {modes.map((item) => {
+        const active = mode === item.value
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onChange(item.value)}
+            title={item.description}
+            aria-pressed={active}
+            className="rounded-md px-3 py-1.5 font-display text-xs font-semibold transition-colors"
+            style={{
+              color: active ? '#07110e' : 'var(--text-muted)',
+              background: active ? 'var(--teal)' : 'transparent',
+            }}
+          >
+            {item.label}
+          </button>
+        )
+      })}
     </div>
   )
 }

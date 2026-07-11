@@ -2,11 +2,17 @@
 
 let pyodideReady = false
 let pyodideInstance = null
+let initPromise = null
 
 async function initPyodide() {
+  if (pyodideReady) return
+  if (initPromise) return initPromise
+  initPromise = (async () => {
   importScripts('https://cdn.jsdelivr.net/pyodide/v0.27.0/full/pyodide.js')
   // eslint-disable-next-line no-undef
-  pyodideInstance = await loadPyodide()
+  pyodideInstance = await loadPyodide({
+    indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.27.0/full/',
+  })
   try {
     await pyodideInstance.loadPackage(['numpy', 'matplotlib', 'scipy', 'pandas', 'scikit-learn'])
   } catch (err) {
@@ -21,6 +27,8 @@ import sys, io
 `)
   pyodideReady = true
   self.postMessage({ type: 'ready' })
+  })()
+  return initPromise
 }
 
 self.onmessage = async function (event) {
@@ -77,7 +85,7 @@ except Exception:
         // Forward a non-fatal warning so the user is informed
         pyodideInstance.runPython(`
 import sys
-sys.stderr.write("Note: some packages could not be loaded in the browser environment. Use the Daytona sandbox for full Python support.\\n")
+sys.stderr.write("Note: some packages could not be loaded in the browser runtime. Use Open in Colab for a full Python environment.\\n")
 `)
       }
 
@@ -108,7 +116,3 @@ sys.stderr = sys.__stderr__
   }
 }
 
-// Start initialization immediately
-initPyodide().catch(err => {
-  self.postMessage({ type: 'error', error: 'Failed to initialize Pyodide: ' + String(err) })
-})

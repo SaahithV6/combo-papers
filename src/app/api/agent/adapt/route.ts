@@ -2,13 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { mentorAdapt } from '@/lib/agent/mentor'
 import { getButterbaseAdmin } from '@/lib/butterbase'
 import { applyLearningSignal, ensureLearner, rowToProfile } from '@/lib/learner'
+import { authErrorResponse, resolveRequestUserId } from '@/lib/serverAuth'
 
 export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const userId = (body.userId as string) || 'anonymous'
+    const identity = await resolveRequestUserId(request, (body.userId as string) || 'anonymous')
+    const userId = identity.userId
     const eventType = body.eventType as
       | 'dont_understand'
       | 'checkpoint_fail'
@@ -22,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     await ensureLearner({
       userId,
-      email: typeof body.email === 'string' ? body.email : undefined,
+      email: identity.email || (typeof body.email === 'string' ? body.email : undefined),
     })
 
     const turn = await mentorAdapt({
@@ -59,6 +61,8 @@ export async function POST(request: NextRequest) {
       profile: learner ? rowToProfile(learner) : null,
     })
   } catch (error) {
+    const auth = authErrorResponse(error)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Agent adapt error:', error)
     return NextResponse.json(
       { error: 'Adapt failed', details: error instanceof Error ? error.message : 'Unknown' },

@@ -6,17 +6,40 @@ import { extractVariables } from '@/lib/extractVariables'
 import { storeInSupermemory } from '@/lib/supermemory'
 import { withSpan } from '@/lib/laminar'
 import { Section } from '@/lib/types'
+import demoData from '@/data/demo-fallback.json'
+import { getButterbaseAdmin } from '@/lib/butterbase'
+import { checkRateLimit } from '@/lib/rateLimit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 120
 
 export async function POST(request: NextRequest) {
+  const rate = checkRateLimit(request, 'process', { limit: 8, windowMs: 5 * 60_000 })
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: 'Generation limit reached. Try again in a few minutes or use the guided demo.' },
+      { status: 429, headers: { 'Retry-After': String(rate.retryAfter) } }
+    )
+  }
   return withSpan('process_paper', async () => {
   try {
     const body = await request.json()
     const paperData = body.paper || body
     const { title, authors, pdfUrl, sourceUrl, sourceName } = paperData
     const paperId = paperData.paperId || paperData.id
+
+    // Deterministic, zero-credit path for the guided demo.
+    const demoPaper = demoData.papers.find(
+      (candidate) => candidate.id === paperId || candidate.title === title
+    )
+    if (demoPaper) {
+      return NextResponse.json({
+        paperId: demoPaper.id,
+        status: 'ready',
+        paper: demoPaper,
+        source: 'bundled-demo',
+      })
+    }
 
     if (!pdfUrl || !title) {
       return NextResponse.json({ error: 'pdfUrl and title are required' }, { status: 400 })
@@ -81,6 +104,48 @@ export async function POST(request: NextRequest) {
       variables,
       notationWarnings,
       notebookCells,
+    }
+
+    // Butterbase is the canonical durable record; Mongo remains a compatibility fallback.
+    if (paperId) {
+      const admin = getButterbaseAdmin()
+      if (admin) {
+        try {
+          const record = {
+            external_id: paperId,
+            arxiv_id: typeof paperId === 'string' && paperId.startsWith('arxiv:') ? paperId.slice(6) : null,
+            doi: paperData.doi || null,
+            title,
+            authors: authors || [],
+            venue: paperData.venue || null,
+            year: paperData.year || null,
+            pdf_url: pdfUrl,
+            source_url: sourceUrl || pdfUrl,
+            source_name: sourceName || 'arXiv',
+            access_tier: paperData.accessTier || 'open',
+            relevance_score: paperData.relevanceScore || 0,
+            relevance_reason: paperData.relevanceReason || null,
+            status: 'ready',
+            processed: paper,
+            github_url: parsed.githubUrl || null,
+            notebook_cells: notebookCells,
+            updated_at: new Date().toISOString(),
+          }
+          const { data: existing } = await admin
+            .from('papers')
+            .select('id')
+            .eq('external_id', paperId)
+            .limit(1)
+          const row = Array.isArray(existing) ? existing[0] : existing
+          if (row && typeof row === 'object' && 'id' in row) {
+            await admin.from('papers').update(record).eq('id', String(row.id))
+          } else {
+            await admin.from('papers').insert(record)
+          }
+        } catch (error) {
+          console.warn('Butterbase paper persist failed:', error)
+        }
+      }
     }
 
     // Store in Supermemory for future prerequisite lookups

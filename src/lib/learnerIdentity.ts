@@ -6,6 +6,25 @@
 
 const GUEST_KEY = 'combo:guest_user_id'
 
+export function getExistingGuestUserId(): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const value = localStorage.getItem(GUEST_KEY)
+    return value?.startsWith('guest_') ? value : null
+  } catch {
+    return null
+  }
+}
+
+export function clearGuestUserId() {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(GUEST_KEY)
+  } catch {
+    // Storage can be unavailable in private browsing.
+  }
+}
+
 export function getOrCreateGuestUserId(): string {
   if (typeof window === 'undefined') return 'anonymous'
   try {

@@ -69,8 +69,8 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
 
   return (
     <div
-      className="fixed right-0 top-0 h-full z-50 flex flex-col animate-slide-in-right bg-surface border-l border-surface-2 shadow-2xl"
-      style={{ width: '480px' }}
+      className="fixed bottom-0 right-0 top-[var(--app-header)] z-[80] flex w-full flex-col animate-slide-in-right border-l shadow-2xl sm:w-[min(520px,100vw)]"
+      style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
     >
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-2">
         <div>

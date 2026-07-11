@@ -7,6 +7,7 @@ import {
   rowToProfile,
   updateLearnerProfile,
 } from '@/lib/learner'
+import { authErrorResponse, resolveRequestUserId } from '@/lib/serverAuth'
 
 export const runtime = 'nodejs'
 
@@ -16,13 +17,14 @@ export const runtime = 'nodejs'
  * PATCH { userId, goals?, knownConcepts?, gapConcepts?, preferences?, email? }
  */
 export async function GET(request: NextRequest) {
-  const userId = request.nextUrl.searchParams.get('userId')
+  const claimedUserId = request.nextUrl.searchParams.get('userId')
   const query = request.nextUrl.searchParams.get('query') || undefined
-  if (!userId) {
+  if (!claimedUserId) {
     return NextResponse.json({ error: 'userId required' }, { status: 400 })
   }
 
   try {
+    const { userId } = await resolveRequestUserId(request, claimedUserId)
     await ensureLearner({ userId })
     const { row, profile, memories } = await loadLearnerContext(userId, query || 'learning progress')
     const threads = await listLearnerThreads(userId)
@@ -33,6 +35,8 @@ export async function GET(request: NextRequest) {
       threads,
     })
   } catch (e) {
+    const auth = authErrorResponse(e)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Learner GET failed:', e)
     return NextResponse.json(
       { error: 'Failed to load learner', details: e instanceof Error ? e.message : 'Unknown' },
@@ -44,14 +48,15 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const userId = body.userId as string
-    if (!userId) {
+    const claimedUserId = body.userId as string
+    if (!claimedUserId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
+    const identity = await resolveRequestUserId(request, claimedUserId)
 
     const row = await ensureLearner({
-      userId,
-      email: body.email,
+      userId: identity.userId,
+      email: identity.email || body.email,
       displayName: body.displayName,
       goals: body.goals,
     })
@@ -61,6 +66,8 @@ export async function POST(request: NextRequest) {
       profile: row ? rowToProfile(row) : null,
     })
   } catch (e) {
+    const auth = authErrorResponse(e)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Learner POST failed:', e)
     return NextResponse.json(
       { error: 'Failed to ensure learner', details: e instanceof Error ? e.message : 'Unknown' },
@@ -72,10 +79,11 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const userId = body.userId as string
-    if (!userId) {
+    const claimedUserId = body.userId as string
+    if (!claimedUserId) {
       return NextResponse.json({ error: 'userId required' }, { status: 400 })
     }
+    const { userId, email } = await resolveRequestUserId(request, claimedUserId)
 
     // Optional: apply a single learning signal (same as adapt side-effect)
     if (body.eventType && body.concept) {
@@ -92,7 +100,7 @@ export async function PATCH(request: NextRequest) {
       knownConcepts: body.knownConcepts,
       gapConcepts: body.gapConcepts,
       preferences: body.preferences,
-      email: body.email,
+      email: email || body.email,
       displayName: body.displayName,
     })
 
@@ -101,6 +109,8 @@ export async function PATCH(request: NextRequest) {
       profile: row ? rowToProfile(row) : null,
     })
   } catch (e) {
+    const auth = authErrorResponse(e)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Learner PATCH failed:', e)
     return NextResponse.json(
       { error: 'Failed to update learner', details: e instanceof Error ? e.message : 'Unknown' },

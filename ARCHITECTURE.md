@@ -6,7 +6,8 @@
 2. **Search is a learning plan** — `/api/agent/search` returns papers *and* a mentor curriculum.
 3. **Struggle is a signal** — "I don't understand" and checkpoints call `/api/agent/adapt`, which writes EverOS memory, updates Butterbase `learners` gaps/knowns, and revises the path.
 4. **Butterbase is the backend** — replaces Convex + Vercel for data, auth, and submission/deploy.
-5. **Identity is stable** — signed-in Butterbase `user.id`, or a `guest_*` local id; both key EverOS + `learners.user_id`.
+5. **Identity is stable** — signed-in Butterbase `user.id`, or a `guest_*` local id; both key EverOS + `learners.user_id`. Guest work migrates into the account on sign-in.
+6. **Spatial workspace** — shared AppShell, thread hub for multi-paper choice, and a three-zone Living Page (path rail / reading column / tool dock) with one reading status bar.
 
 ---
 

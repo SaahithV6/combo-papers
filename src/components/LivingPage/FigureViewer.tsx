@@ -10,53 +10,78 @@ interface FigureViewerProps {
 
 export default function FigureViewer({ figure, isActive = false }: FigureViewerProps) {
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [imageFailed, setImageFailed] = useState(false)
+  const hasImage =
+    !imageFailed && Boolean(figure.url?.startsWith('/') || figure.url?.startsWith('http'))
 
   return (
     <>
-      <div
-        className={`my-6 rounded-lg overflow-hidden cursor-pointer transition-all duration-300 ${isActive ? 'figure-active' : ''}`}
+      <figure
+        className={`my-8 overflow-hidden rounded-xl border transition-all duration-300 ${isActive ? 'figure-active' : ''}`}
         style={{
-          border: isActive ? '1px solid #f5a623' : '1px solid #1a2235',
-          boxShadow: isActive ? '0 0 12px rgba(245, 166, 35, 0.3)' : 'none',
+          borderColor: isActive ? 'var(--amber)' : 'var(--border)',
+          boxShadow: isActive ? '0 0 18px var(--amber-soft)' : 'none',
         }}
-        onClick={() => setIsFullscreen(true)}
       >
-        <div className="w-full h-48 flex items-center justify-center" style={{ backgroundColor: '#111827' }}>
-          {figure.url.startsWith('/') || figure.url.startsWith('http') ? (
+        <button
+          type="button"
+          className="flex min-h-56 w-full items-center justify-center"
+          style={{ background: 'var(--surface)' }}
+          onClick={() => hasImage && setIsFullscreen(true)}
+          disabled={!hasImage}
+          aria-label={hasImage ? `Expand figure: ${figure.caption}` : undefined}
+          data-figure-trigger
+        >
+          {hasImage ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={figure.url}
               alt={figure.caption}
-              className="max-h-full max-w-full object-contain"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none'
-              }}
+              className="max-h-[30rem] w-full object-contain"
+              onError={() => setImageFailed(true)}
             />
-          ) : null}
-          <div className="text-center p-4">
-            <span className="text-4xl mb-2 block">📊</span>
-            <span className="text-xs" style={{ color: '#9ca3af' }}>Figure · Click to expand</span>
-          </div>
-        </div>
-        <div className="px-4 py-2" style={{ backgroundColor: '#0d1117', borderTop: '1px solid #1a2235' }}>
-          <p className="text-xs" style={{ color: '#9ca3af', fontFamily: 'IBM Plex Serif, serif' }}>
-            {figure.caption}
-          </p>
-        </div>
-      </div>
-
-      {isFullscreen && (
-        <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-8"
-          style={{ backgroundColor: 'rgba(10, 14, 20, 0.95)' }}
-          onClick={() => setIsFullscreen(false)}
-        >
-          <div className="max-w-4xl w-full" style={{ border: '1px solid #f5a623' }}>
-            <div className="w-full min-h-48 flex items-center justify-center p-8" style={{ backgroundColor: '#111827' }}>
-              <span className="text-8xl">📊</span>
+          ) : (
+            <div className="p-6 text-center">
+              <span className="ui-label">Figure unavailable</span>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                Open the source PDF to inspect this figure.
+              </p>
             </div>
-            <div className="p-4" style={{ backgroundColor: '#0d1117' }}>
-              <p className="text-sm" style={{ color: '#e8e0d0' }}>{figure.caption}</p>
+          )}
+        </button>
+        <figcaption
+          className="border-t px-4 py-3 text-xs leading-relaxed"
+          style={{ borderColor: 'var(--border)', color: 'var(--text-secondary)', background: 'var(--background-raised)' }}
+        >
+          <span className="ui-label mr-2">Figure</span>
+            {figure.caption}
+        </figcaption>
+      </figure>
+
+      {isFullscreen && hasImage && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-8"
+          style={{ background: 'rgba(3, 5, 8, 0.94)' }}
+          onClick={() => setIsFullscreen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded figure"
+        >
+          <div
+            className="ui-panel max-h-[90vh] w-full max-w-6xl overflow-auto"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex min-h-48 items-center justify-center p-4 md:p-8">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={figure.url} alt={figure.caption} className="max-h-[70vh] max-w-full object-contain" />
+            </div>
+            <div className="flex items-start gap-4 border-t p-4" style={{ borderColor: 'var(--border)' }}>
+              <p className="flex-1 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                {figure.caption}
+              </p>
+              <button type="button" className="ui-button" onClick={() => setIsFullscreen(false)}>
+                Close
+              </button>
             </div>
           </div>
         </div>

@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { analyzeApproachConflicts } from '@/lib/agent/conflicts'
 import { rememberAgentTrajectory } from '@/lib/everos'
+import { authErrorResponse, resolveRequestUserId } from '@/lib/serverAuth'
+import { checkRateLimit } from '@/lib/rateLimit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
 
 export async function POST(request: NextRequest) {
   try {
+    const rate = checkRateLimit(request, 'conflicts', { limit: 10, windowMs: 5 * 60_000 })
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Comparison limit reached. Try again shortly.' },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfter) } }
+      )
+    }
     const body = await request.json()
     const query = (body.query as string) || 'research topic'
     const papers = (body.papers as Array<{
@@ -18,7 +27,10 @@ export async function POST(request: NextRequest) {
       tldr?: Array<{ sentence: string }>
       relevanceReason?: string
     }>) || []
-    const userId = (body.userId as string) || 'anonymous'
+    const { userId } = await resolveRequestUserId(
+      request,
+      (body.userId as string) || 'anonymous'
+    )
 
     if (!Array.isArray(papers) || papers.length < 2) {
       return NextResponse.json(
@@ -36,6 +48,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ analysis })
   } catch (error) {
+    const auth = authErrorResponse(error)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Conflicts API error:', error)
     return NextResponse.json(
       {

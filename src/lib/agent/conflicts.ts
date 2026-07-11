@@ -75,6 +75,75 @@ function fallbackConflicts(query: string, papers: PaperBrief[]): ConflictAnalysi
   }
 }
 
+function mechanisticInterpretabilityDemo(
+  query: string,
+  papers: PaperBrief[]
+): ConflictAnalysis | null {
+  const circuits = papers.find((paper) => /circuit|interpretability in the wild/i.test(paper.title))
+  const sparse = papers.find((paper) => /sparse autoencoder/i.test(paper.title))
+  if (!circuits || !sparse || !/mechanistic interpretability/i.test(query)) return null
+
+  return {
+    query,
+    summary:
+      'The papers agree that internal representations can be made legible, but they optimize for different kinds of understanding. Circuit analysis follows a specific behavior end-to-end; sparse autoencoders trade that behavioral specificity for scalable feature discovery.',
+    agreements: [
+      'Useful explanations require intervention or validation, not visualization alone.',
+      'Representations are distributed enough that raw neurons are an unreliable unit of analysis.',
+    ],
+    conflicts: [
+      {
+        id: 'demo_unit_of_analysis',
+        topic: 'What should be the unit of explanation?',
+        paperA: {
+          id: circuits.id,
+          title: circuits.title,
+          stance: 'Trace a behavior through a small, causally validated circuit of heads and components.',
+        },
+        paperB: {
+          id: sparse.id,
+          title: sparse.title,
+          stance: 'Decompose activations into a large dictionary of sparse, human-interpretable features.',
+        },
+        whyItMatters:
+          'The choice determines whether you get a precise explanation for one behavior or a broad map of reusable concepts.',
+        prosA: ['Strong behavioral and causal specificity', 'Clear falsifiable intervention story'],
+        consA: ['Labor intensive', 'Often narrow to one task, prompt distribution, or model'],
+        prosB: ['Scales to many features and layers', 'Supports broad exploratory audits'],
+        consB: ['Feature labels can be subjective', 'Reconstruction quality does not guarantee causal faithfulness'],
+        whenToChooseA: 'You need to explain or debug one concrete model behavior.',
+        whenToChooseB: 'You need broad coverage before deciding which behaviors deserve a deep causal study.',
+        confidence: 0.93,
+      },
+      {
+        id: 'demo_validation_standard',
+        topic: 'What counts as a validated explanation?',
+        paperA: {
+          id: circuits.id,
+          title: circuits.title,
+          stance: 'Validate by patching or ablating components and measuring the target behavior.',
+        },
+        paperB: {
+          id: sparse.id,
+          title: sparse.title,
+          stance: 'Validate with reconstruction, sparsity, feature coherence, and targeted activation tests.',
+        },
+        whyItMatters:
+          'A representation can look interpretable without being the mechanism the model actually relies on.',
+        prosA: ['Direct causal evidence', 'Evaluation is tied to the behavior being explained'],
+        consA: ['Interventions can introduce off-distribution effects', 'Hard to apply at dictionary scale'],
+        prosB: ['Quantitative coverage metrics', 'Efficient enough to compare many learned features'],
+        consB: ['Proxy metrics can reward plausible but non-causal features', 'Coverage depends on the learned dictionary'],
+        whenToChooseA: 'Your claim is causal or safety-critical.',
+        whenToChooseB: 'Your goal is scalable discovery and triage, followed by causal validation.',
+        confidence: 0.88,
+      },
+    ],
+    recommendedStartingPoint:
+      'Use sparse autoencoders to map candidate features, then apply circuit-style interventions to the behaviors that matter.',
+  }
+}
+
 export async function analyzeApproachConflicts(
   query: string,
   papers: PaperBrief[]
@@ -87,6 +156,9 @@ export async function analyzeApproachConflicts(
       conflicts: [],
     }
   }
+
+  const demo = mechanisticInterpretabilityDemo(query, papers)
+  if (demo) return demo
 
   if (!isLlmConfigured()) {
     return fallbackConflicts(query, papers)

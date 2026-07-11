@@ -14,7 +14,7 @@ type ThreadSummary = {
 }
 
 export default function LearnerMemoryPanel() {
-  const { userId, email, isGuest, ready } = useLearnerId()
+  const { userId, email, isGuest, ready, authHeaders } = useLearnerId()
   const [profile, setProfile] = useState<LearnerProfile | null>(null)
   const [memories, setMemories] = useState<string[]>([])
   const [threads, setThreads] = useState<ThreadSummary[]>([])
@@ -27,11 +27,12 @@ export default function LearnerMemoryPanel() {
     try {
       await fetch('/api/learner', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ userId, email }),
       })
       const res = await fetch(
-        `/api/learner?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent('recent learning')}`
+        `/api/learner?userId=${encodeURIComponent(userId)}&query=${encodeURIComponent('recent learning')}`,
+        { headers: authHeaders }
       )
       if (!res.ok) return
       const data = await res.json()
@@ -44,7 +45,7 @@ export default function LearnerMemoryPanel() {
     } catch {
       /* ignore */
     }
-  }, [ready, userId, email])
+  }, [ready, userId, email, authHeaders])
 
   useEffect(() => {
     void refresh()
@@ -59,7 +60,7 @@ export default function LearnerMemoryPanel() {
         .filter(Boolean)
       const res = await fetch('/api/learner', {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ userId, goals, email }),
       })
       if (res.ok) {
@@ -74,19 +75,19 @@ export default function LearnerMemoryPanel() {
   if (!ready) return null
 
   return (
-    <div className="w-full max-w-2xl mx-auto mt-6">
+    <div className="w-full">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-3 rounded-xl text-left text-sm"
+        className="ui-panel flex w-full items-center justify-between px-4 py-4 text-left text-sm"
         style={{
-          backgroundColor: '#111827',
-          border: '1px solid #1a2235',
-          color: '#e8e0d0',
+          color: 'var(--text)',
         }}
       >
         <span>
-          <span style={{ color: '#00d4aa' }}>Memory</span>
+          <span className="font-display font-semibold" style={{ color: 'var(--teal)' }}>
+            Memory
+          </span>
           {isGuest ? ' · guest session' : ` · ${email || 'signed in'}`}
           {(profile?.gapConcepts?.length || 0) > 0 && (
             <span className="ml-2 text-xs" style={{ color: '#f5a623' }}>
@@ -102,12 +103,11 @@ export default function LearnerMemoryPanel() {
 
       {open && (
         <div
-          className="mt-2 px-4 py-4 rounded-xl space-y-4 text-sm"
-          style={{ backgroundColor: '#0d1219', border: '1px solid #1a2235', color: '#c4b5a0' }}
+          className="ui-panel mt-2 space-y-4 px-4 py-4 text-sm"
+          style={{ color: 'var(--text-secondary)' }}
         >
-          <p className="text-xs" style={{ color: '#6b7280' }}>
-            Butterbase stores your profile & threads. EverOS remembers episodes so the mentor adapts
-            across sessions.
+          <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+            Your goals, friction, and prior paths shape what the mentor surfaces next.
             {isGuest && ' Sign in to keep memory across devices.'}
           </p>
 
@@ -120,15 +120,13 @@ export default function LearnerMemoryPanel() {
                 value={goalsDraft}
                 onChange={(e) => setGoalsDraft(e.target.value)}
                 placeholder="e.g. transformers, RLHF, institutional lit review"
-                className="flex-1 px-3 py-2 rounded-lg text-sm bg-transparent outline-none"
-                style={{ border: '1px solid #1a2235', color: '#e8e0d0' }}
+                className="ui-input flex-1 px-3 py-2 text-sm"
               />
               <button
                 type="button"
                 onClick={() => void saveGoals()}
                 disabled={saving}
-                className="px-3 py-2 rounded-lg text-xs font-medium disabled:opacity-50"
-                style={{ backgroundColor: '#00d4aa22', color: '#00d4aa' }}
+                className="ui-button"
               >
                 {saving ? '…' : 'Save'}
               </button>

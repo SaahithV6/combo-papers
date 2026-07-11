@@ -19,20 +19,22 @@ Status vs original [YCBU README](https://github.com/SaahithV6/YCBU-3-2026) / Liv
 | Live notebooks in-page | Done (Pyodide primary; Colab via download+upload, no OAuth) |
 | Ambient audio + action chimes | Done (Sound toggle on Living Page; Web Audio) |
 | Daytona full sandbox | Dropped for demo — not required |
-| Depth meter | Done |
-| Spaced re-exposure strip | **Wired** |
-| Did you follow that? checkpoints | **Wired** |
-| Research threads multi-paper | Done (+ conflicts pros/cons) |
-| Thread timeline / what changed | **Wired** (lightweight) |
-| Glossary sidebar | Done |
-| Keyboard shortcuts | Done |
-| TL;DR → jump to source sentence | **Wired** |
-| Social presence (“N others reading”) | **Wired** (ambient) |
-| One-more next paper transition | **Wired** |
-| Save & share experiences | Done (`/thread/[id]`) |
-| Per-user memory (Butterbase + EverOS) | **Done** — `learners` profile, gaps/knowns, EverOS episodes, Memory panel |
-| Google OAuth | **UI + callback ready** — needs Google client ID/secret in Butterbase |
-| OpenAthens / UCSC library books+articles | Done (click-through) |
+| Depth meter | Done (merged into ReadingStatusBar) |
+| Spaced re-exposure strip | Done |
+| Did you follow that? checkpoints | Done |
+| Research threads multi-paper | Done (+ conflicts pros/cons + path hub) |
+| Thread timeline / what changed | Done |
+| Glossary sidebar | Done (responsive drawer) |
+| Keyboard shortcuts | Done (wired E/F/D/`/` + help modal) |
+| TL;DR → jump to source sentence | Done |
+| Social presence (“N others reading”) | Removed — credibility over gimmick |
+| One-more next paper transition | Done |
+| Save & share experiences | Done (`/thread/[id]` + Butterbase upsert/PATCH) |
+| Per-user memory (Butterbase + EverOS) | Done — profile, gaps/knowns, guest→account migrate |
+| App shell + design system | Done — shared nav, tokens, focus/skip/reduced-motion |
+| Spatial Living Page workspace | Done — path rail, reading column, tool dock, status bar |
+| Google OAuth | UI + callback ready — needs Google client ID/secret in Butterbase |
+| OpenAthens / UCSC library books+articles | Done (click-through; no hardcoded personal email) |
 | Side-by-side figure compare across papers | Not yet |
 | Daytona full sandbox | Dropped for demo — not required |
 

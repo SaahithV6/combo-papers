@@ -6,11 +6,12 @@ import { ConceptMapNode } from '@/lib/types'
 interface ConceptMapProps {
   nodes: ConceptMapNode[]
   onNodeClick?: (node: ConceptMapNode) => void
+  embedded?: boolean
 }
 
 const MAX_LABEL_LENGTH = 12
 
-export default function ConceptMap({ nodes, onNodeClick }: ConceptMapProps) {
+export default function ConceptMap({ nodes, onNodeClick, embedded = false }: ConceptMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
 
   useEffect(() => {
@@ -107,13 +108,17 @@ export default function ConceptMap({ nodes, onNodeClick }: ConceptMapProps) {
 
   return (
     <div
-      className="fixed bottom-4 left-4 z-40 rounded-xl overflow-hidden shadow-xl"
+      className={
+        embedded
+          ? 'ui-panel overflow-hidden'
+          : 'fixed bottom-4 left-4 z-40 overflow-hidden rounded-xl shadow-xl'
+      }
       style={{
-        width: 240,
+        width: embedded ? '100%' : 240,
         height: 200,
-        backgroundColor: '#0a0e14cc',
-        border: '1px solid #1a2235',
-        backdropFilter: 'blur(8px)',
+        background: embedded ? 'var(--surface)' : 'rgba(8, 11, 16, 0.85)',
+        border: embedded ? undefined : '1px solid var(--border)',
+        backdropFilter: embedded ? undefined : 'blur(8px)',
       }}
     >
       <div className="px-2 pt-1.5 pb-0">
@@ -121,7 +126,13 @@ export default function ConceptMap({ nodes, onNodeClick }: ConceptMapProps) {
           Concept Map
         </p>
       </div>
-      <svg ref={svgRef} width={240} height={182} style={{ display: 'block' }} />
+      <svg
+        ref={svgRef}
+        viewBox="0 0 240 182"
+        width={embedded ? '100%' : 240}
+        height={182}
+        style={{ display: 'block' }}
+      />
     </div>
   )
 }

@@ -24,11 +24,10 @@ export default function GlossarySidebar({ variables, isOpen, onClose, onVariable
 
   return (
     <div
-      className="fixed right-0 top-0 h-full z-50 flex flex-col animate-slide-in-right"
+      className="fixed bottom-0 right-0 top-[var(--app-header)] z-[80] flex w-full flex-col animate-slide-in-right sm:w-[min(380px,100vw)]"
       style={{
-        width: '320px',
-        backgroundColor: '#111827',
-        borderLeft: '1px solid #1a2235',
+        background: 'var(--surface)',
+        borderLeft: '1px solid var(--border)',
       }}
     >
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid #1a2235' }}>

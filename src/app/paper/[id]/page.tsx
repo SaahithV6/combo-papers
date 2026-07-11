@@ -1,11 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useState, useEffect, useMemo } from 'react'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import Script from 'next/script'
 import { ProcessedPaper, ReadingMode, Citation, RabbitHoleItem, ConceptMapNode } from '@/lib/types'
 import HeaderZone from '@/components/LivingPage/HeaderZone'
 import SectionRenderer from '@/components/LivingPage/SectionRenderer'
-import DepthMeter from '@/components/LivingPage/DepthMeter'
+import ReadingStatusBar from '@/components/LivingPage/ReadingStatusBar'
 import CitationGraph from '@/components/CitationGraph/CitationGraph'
 import NotebookEmbed from '@/components/Notebook/NotebookEmbed'
 import RabbitHoleStack from '@/components/RabbitHole/RabbitHoleStack'
@@ -13,29 +14,22 @@ import RabbitHolePanel from '@/components/RabbitHole/RabbitHolePanel'
 import GlossarySidebar from '@/components/Glossary/GlossarySidebar'
 import KeyboardShortcuts from '@/components/Navigation/KeyboardShortcuts'
 import ConceptMap from '@/components/ConceptMap/ConceptMap'
-import SpacedReExposureStrip from '@/components/LivingPage/SpacedReExposureStrip'
 import SoundToggle, { playAction } from '@/components/LivingPage/SoundToggle'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useDepthMeter } from '@/hooks/useDepthMeter'
 import { useRabbitHole } from '@/hooks/useRabbitHole'
 import demoData from '@/data/demo-fallback.json'
-import { useButterbaseAuth } from '@/components/ButterbaseProvider'
 import { useLearnerId } from '@/hooks/useLearnerId'
 import type { ArticleAnalysis } from '@/app/api/analyze-articles/route'
 import type { DiscoveredArticle } from '@/app/api/browser-use/route'
 import { safeEncodeId } from '@/lib/urlUtils'
 
-interface SupermemoryResult {
-  content: string
-  metadata: { title: string; sourceUrl: string; paperId?: string }
-  score: number
-}
-
 export default function PaperPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, signOut } = useButterbaseAuth()
-  const { userId: learnerUserId, email: learnerEmail } = useLearnerId()
+  const searchParams = useSearchParams()
+  const activeThreadId = searchParams.get('thread')
+  const { userId: learnerUserId, email: learnerEmail, authHeaders } = useLearnerId()
   const [paper, setPaper] = useState<ProcessedPaper | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [readingMode, setReadingMode] = useState<ReadingMode>('read')
@@ -43,10 +37,11 @@ export default function PaperPage() {
   const [showNotebook, setShowNotebook] = useState(false)
   const [showGlossary, setShowGlossary] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
+  const [showConceptMap, setShowConceptMap] = useState(true)
   const [showRabbitHolePanel, setShowRabbitHolePanel] = useState(false)
   const [citationFilter, setCitationFilter] = useState<'all' | 'foundational' | 'recent'>('all')
   const [currentSectionIndex, setCurrentSectionIndex] = useState(0)
-  const [relatedMemories, setRelatedMemories] = useState<SupermemoryResult[]>([])
+  const [relatedMemories, setRelatedMemories] = useState<string[]>([])
   const [discoverLoading, setDiscoverLoading] = useState(false)
   const [discoveredArticles, setDiscoveredArticles] = useState<DiscoveredArticle[]>([])
   const [articleAnalysis, setArticleAnalysis] = useState<ArticleAnalysis | null>(null)
@@ -55,10 +50,18 @@ export default function PaperPage() {
   const [pdfFileId, setPdfFileId] = useState<string | null>(null)
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle')
   const [pdfStatusMsg, setPdfStatusMsg] = useState('')
-  const sectionRefs = useRef<HTMLElement[]>([])
 
-  const { depth, recordAction } = useDepthMeter()
-  const { stack, current: rabbitHoleCurrent, currentIndex: rabbitHoleIndex, push: pushRabbitHole, goBack: rabbitHoleBack, goForward: rabbitHoleForward } = useRabbitHole()
+  const paperRouteId = decodeURIComponent(String(params.id || ''))
+  const { depth, recordAction } = useDepthMeter(paperRouteId)
+  const {
+    stack,
+    current: rabbitHoleCurrent,
+    currentIndex: rabbitHoleIndex,
+    push: pushRabbitHole,
+    goBack: rabbitHoleBack,
+    goForward: rabbitHoleForward,
+    jumpTo: jumpToRabbitHole,
+  } = useRabbitHole()
 
   // Load paper data — try demo data first, then sessionStorage, then MongoDB (with 30s timeout)
   useEffect(() => {
@@ -83,7 +86,7 @@ export default function PaperPage() {
         setIsLoading(false)
         return
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
@@ -109,34 +112,20 @@ export default function PaperPage() {
     }
   }, [params.id])
 
-  // Query Supermemory for cross-session recall (non-blocking)
+  // Recall learner episodes from EverOS through the user-scoped learner API.
   useEffect(() => {
-    if (!paper?.title) return
-    fetch('/api/prerequisite', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ paragraph: paper.title, paperTitle: paper.title, mode: 'recall' }),
-    }).catch(() => {/* skip */})
-
-    // Directly query supermemory for related papers
-    ;(async () => {
-      try {
-        const res = await fetch('/api/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: `related:${paper.title}`, recallOnly: true }),
-        })
-        if (res.ok) {
-          const data = await res.json() as { memories?: SupermemoryResult[] }
-          if (data.memories && data.memories.length > 0) {
-            setRelatedMemories(data.memories)
-          }
-        }
-      } catch {
-        // Supermemory unavailable — silently skip
-      }
-    })()
-  }, [paper?.title])
+    if (!paper?.title || !learnerUserId) return
+    fetch(
+      `/api/learner?userId=${encodeURIComponent(learnerUserId)}&query=${encodeURIComponent(paper.title)}`,
+      { headers: authHeaders }
+    )
+      .then(async (response) => {
+        if (!response.ok) return
+        const data = (await response.json()) as { memories?: string[] }
+        setRelatedMemories(Array.isArray(data.memories) ? data.memories : [])
+      })
+      .catch(() => {})
+  }, [paper?.title, learnerUserId, authHeaders])
 
   // Build concept map nodes from paper data
   useEffect(() => {
@@ -171,7 +160,7 @@ export default function PaperPage() {
     }
   }, [paper])
 
-  const sections = paper?.sections || []
+  const sections = useMemo(() => paper?.sections || [], [paper?.sections])
 
   // Track current section via IntersectionObserver
   useEffect(() => {
@@ -205,6 +194,10 @@ export default function PaperPage() {
   useKeyboardShortcuts({
     onNextSection: () => scrollToSection(currentSectionIndex + 1),
     onPrevSection: () => scrollToSection(currentSectionIndex - 1),
+    onToggleEquation: () => {
+      const section = document.getElementById(sections[currentSectionIndex]?.id)
+      ;(section?.querySelector('[data-equation-trigger]') as HTMLElement | null)?.click()
+    },
     onToggleNotebook: () => setShowNotebook(v => !v),
     onToggleCitationGraph: () => setShowCitationGraph(v => !v),
     onSwitchReadingMode: () => {
@@ -212,9 +205,18 @@ export default function PaperPage() {
       const next = modes[(modes.indexOf(readingMode) + 1) % modes.length]
       setReadingMode(next)
     },
+    onFullscreenFigure: () => {
+      const section = document.getElementById(sections[currentSectionIndex]?.id)
+      ;(section?.querySelector('[data-figure-trigger]') as HTMLElement | null)?.click()
+    },
+    onDontUnderstand: () => {
+      const section = document.getElementById(sections[currentSectionIndex]?.id)
+      ;(section?.querySelector('[data-dont-understand]') as HTMLElement | null)?.click()
+    },
     onRabbitHoleBack: rabbitHoleBack,
     onRabbitHoleForward: rabbitHoleForward,
     onShowHelp: () => setShowHelp(v => !v),
+    onOpenSearch: () => router.push('/'),
   })
 
   const handleDiscoverRelated = async () => {
@@ -304,10 +306,14 @@ export default function PaperPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="grid min-h-[70vh] place-items-center px-6" aria-live="polite">
         <div className="text-center">
-          <div className="animate-spin text-4xl mb-4">⟳</div>
-          <p className="text-text-muted">Loading paper...</p>
+          <p className="ui-label" style={{ color: 'var(--teal)' }}>
+            Opening Living Page
+          </p>
+          <p className="mt-3 text-sm" style={{ color: 'var(--text-secondary)' }}>
+            Restoring sections, notation, and labs…
+          </p>
         </div>
       </div>
     )
@@ -315,15 +321,25 @@ export default function PaperPage() {
 
   if (!paper) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="text-center">
-          <p className="text-xl mb-4 text-text">Paper not found</p>
-          <button
-            onClick={() => router.push('/')}
-            className="px-4 py-2 rounded bg-teal text-background"
-          >
-            Back to search
-          </button>
+      <div className="grid min-h-[70vh] place-items-center px-6">
+        <div className="ui-panel max-w-lg p-7 text-center">
+          <p className="ui-label mb-3">Living Page unavailable</p>
+          <h1 className="font-display text-2xl font-semibold">This paper is not in the workspace yet.</h1>
+          <p className="mt-3 text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+            Process it from a research path, or open the guided demo to explore a complete Living Page.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            <button type="button" className="ui-button" onClick={() => router.push('/')}>
+              Back to workspace
+            </button>
+            <button
+              type="button"
+              className="ui-button ui-button-primary"
+              onClick={() => router.push('/paper/arxiv%3A2209.11895')}
+            >
+              Open guided demo
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -336,27 +352,26 @@ export default function PaperPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* MathJax */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `
-            window.MathJax = {
-              tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },
-              svg: { fontCache: 'global' }
-            };
-          `,
-        }}
-      />
-      <script
+      <Script id="mathjax-config" strategy="beforeInteractive">
+        {`window.MathJax = {
+          tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']], displayMath: [['$$', '$$'], ['\\\\[', '\\\\]']] },
+          svg: { fontCache: 'global' }
+        };`}
+      </Script>
+      <Script
+        id="mathjax-runtime"
         src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"
-        async
+        strategy="afterInteractive"
       />
 
       {/* Rabbit Hole Stack */}
       <RabbitHoleStack
         stack={stack}
         currentIndex={rabbitHoleIndex}
-        onNavigate={(i) => {}}
+        onNavigate={(index) => {
+          jumpToRabbitHole(index)
+          setShowRabbitHolePanel(true)
+        }}
       />
 
       {/* Rabbit Hole Panel */}
@@ -378,7 +393,15 @@ export default function PaperPage() {
         variables={paper.variables || []}
         isOpen={showGlossary}
         onClose={() => setShowGlossary(false)}
-        onVariableClick={() => recordAction('hoveredVariable')}
+        onVariableClick={(variable) => {
+          recordAction('hoveredVariable')
+          setShowGlossary(false)
+          if (variable.firstSeenSectionId) {
+            document
+              .getElementById(variable.firstSeenSectionId)
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }}
       />
 
       {/* Notebook */}
@@ -435,112 +458,113 @@ export default function PaperPage() {
         </div>
       )}
 
-      {/* Main Content */}
-      <main className="max-w-3xl mx-auto px-6 py-12">
-        {/* Back button */}
-        <div className="mb-6 flex items-center justify-between">
+      {/* Spatial reading workspace */}
+      <div className="mx-auto grid max-w-[1380px] gap-7 px-4 pb-24 pt-7 md:px-7 xl:grid-cols-[230px_minmax(0,720px)_72px] xl:justify-center">
+        <aside className="hidden space-y-4 xl:sticky xl:top-[calc(var(--app-header)+24px)] xl:block xl:self-start">
           <button
-            onClick={() => router.push('/')}
-            className="flex items-center gap-2 text-sm transition-all text-text-muted"
+            type="button"
+            onClick={() =>
+              router.push(activeThreadId ? `/thread/${encodeURIComponent(activeThreadId)}` : '/')
+            }
+            className="ui-button ui-button-ghost -ml-2"
           >
-            ← Back to search
+            ← {activeThreadId ? 'Research path' : 'Workspace'}
           </button>
-          <div className="flex items-center gap-2">
-            {user ? (
-              <button
-                onClick={() => void signOut()}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium"
-                style={{ border: '1px solid #1a2235', color: '#e8e0d0' }}
-              >
-                Sign out
-              </button>
-            ) : (
-              <button
-                onClick={() => router.push('/sign-in')}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium bg-teal text-background"
-              >
-                Sign in
-              </button>
-            )}
+
+          <div className="ui-panel p-4">
+            <p className="ui-label">In this paper</p>
+            <nav className="mt-3" aria-label="Paper sections">
+              {sections.map((section, index) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => scrollToSection(index)}
+                  className="flex w-full items-start gap-2 rounded-md px-1.5 py-2 text-left"
+                  style={{
+                    color:
+                      currentSectionIndex === index ? 'var(--text)' : 'var(--text-muted)',
+                    background:
+                      currentSectionIndex === index ? 'var(--teal-soft)' : 'transparent',
+                  }}
+                >
+                  <span className="mt-0.5 font-mono text-[9px]" style={{ color: 'var(--teal)' }}>
+                    {String(index + 1).padStart(2, '0')}
+                  </span>
+                  <span className="line-clamp-2 text-xs leading-relaxed">{section.title}</span>
+                </button>
+              ))}
+            </nav>
           </div>
-        </div>
 
-        {/* Previously read indicator */}
-        {relatedMemories.length > 0 && (
-          <div className="mb-4 px-3 py-2 rounded border border-teal/30 bg-teal/5 text-xs text-teal">
-            📚 You&apos;ve explored {relatedMemories.length} related paper{relatedMemories.length > 1 ? 's' : ''} before
-          </div>
-        )}
-
-        <HeaderZone
-          paper={paper}
-          readingMode={readingMode}
-          onReadingModeChange={setReadingMode}
-          readersOnline={paper.readersOnline ?? 2 + ((paper.title?.length || 0) % 4)}
-        />
-
-        {/* Toolbar */}
-        <div className="flex items-center gap-2 mb-8 flex-wrap">
-          <button
-            onClick={() => setShowCitationGraph(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface text-text-muted border border-surface-2"
-            title="Citation graph (C)"
-          >
-            ⬡ Citations
-          </button>
-          <button
-            onClick={() => setShowNotebook(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface text-text-muted border border-surface-2"
-            title="Notebook (N)"
-          >
-            ⌥ Notebook
-          </button>
-          <button
-            onClick={() => setShowGlossary(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface text-text-muted border border-surface-2"
-          >
-            Ω Glossary
-          </button>
-          <button
-            onClick={() => setShowHelp(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface text-text-muted border border-surface-2"
-            title="Keyboard shortcuts (?)"
-          >
-            ? Shortcuts
-          </button>
-          <SoundToggle denser={readingMode === 'deep-dive'} />
-          <button
-            onClick={handleDiscoverRelated}
-            disabled={discoverLoading}
-            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface border border-surface-2 disabled:opacity-50 ${discoverLoading ? 'text-text-muted' : 'text-amber'}`}
-          >
-            {discoverLoading ? <><span className="animate-spin">⟳</span> Discovering...</> : '🔍 Discover Related'}
-          </button>
-          {pdfFileId ? (
-            <a
-              href={`/api/papers/${safeEncodeId(params.id as string)}/pdf`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface text-teal border border-teal/30"
-            >
-              📄 View PDF
-            </a>
-          ) : (
-            <button
-              onClick={handleSavePdf}
-              disabled={pdfStatus === 'generating'}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded transition-all bg-surface border border-surface-2 disabled:opacity-50 ${pdfStatus === 'error' ? 'text-red-400' : pdfStatus === 'success' ? 'text-teal' : 'text-text-muted'}`}
-            >
-              {pdfStatus === 'generating'
-                ? <><span className="animate-spin">⟳</span> {pdfStatusMsg}</>
-                : pdfStatus === 'success'
-                ? `✓ ${pdfStatusMsg}`
-                : pdfStatus === 'error'
-                ? `✗ ${pdfStatusMsg}`
-                : '📄 Save PDF'}
-            </button>
+          {showConceptMap && (
+            <ConceptMap
+              embedded
+              nodes={conceptMapNodes}
+              onNodeClick={(node) => {
+                if (node.sectionId) {
+                  document
+                    .getElementById(node.sectionId)
+                    ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                }
+              }}
+            />
           )}
-        </div>
+        </aside>
+
+        <main className="min-w-0">
+          <div className="mb-5 flex items-center justify-between xl:hidden">
+            <button
+              type="button"
+              onClick={() =>
+                router.push(activeThreadId ? `/thread/${encodeURIComponent(activeThreadId)}` : '/')
+              }
+              className="ui-button ui-button-ghost"
+            >
+              ← {activeThreadId ? 'Path' : 'Workspace'}
+            </button>
+            <span className="ui-chip">
+              {currentSectionIndex + 1}/{sections.length || 0}
+            </span>
+          </div>
+
+          {relatedMemories.length > 0 && (
+            <div
+              className="mb-4 rounded-lg border px-3 py-2 text-xs"
+              style={{
+                borderColor: 'rgba(79, 209, 181, 0.25)',
+                color: 'var(--teal)',
+                background: 'var(--teal-soft)',
+              }}
+            >
+              Your mentor recalled {relatedMemories.length} related learning episode
+              {relatedMemories.length === 1 ? '' : 's'}.
+            </div>
+          )}
+
+          <HeaderZone
+            paper={paper}
+            readingMode={readingMode}
+            onReadingModeChange={setReadingMode}
+          />
+
+          <div
+            className="sticky top-[var(--app-header)] z-30 -mx-2 mb-8 flex gap-1 overflow-x-auto border-y px-2 py-2 backdrop-blur-xl xl:hidden"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: 'rgba(8, 11, 16, 0.9)',
+            }}
+          >
+            <button type="button" className="ui-button" onClick={() => setShowCitationGraph(true)}>
+              Explore
+            </button>
+            <button type="button" className="ui-button" onClick={() => setShowNotebook(true)}>
+              Lab
+            </button>
+            <button type="button" className="ui-button" onClick={() => setShowGlossary(true)}>
+              Terms
+            </button>
+            <SoundToggle denser={readingMode === 'deep-dive'} />
+          </div>
 
         {/* Sections */}
         {visibleSections.map((section, i) => (
@@ -567,7 +591,7 @@ export default function PaperPage() {
               playAction('checkpoint')
               void fetch('/api/agent/adapt', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...authHeaders },
                 body: JSON.stringify({
                   eventType: response.length < 12 ? 'checkpoint_fail' : 'checkpoint_pass',
                   concept: section.title,
@@ -582,13 +606,16 @@ export default function PaperPage() {
             learnerUserId={learnerUserId}
             learnerEmail={learnerEmail}
             paperId={paper.id}
+            authHeaders={authHeaders}
           />
         ))}
 
         {/* One-more transition — next paper in thread */}
         {(() => {
           try {
-            const threadKeys = Object.keys(sessionStorage).filter((k) => k.startsWith('thread:'))
+            const threadKeys = activeThreadId
+              ? [`thread:${activeThreadId}`]
+              : Object.keys(sessionStorage).filter((key) => key.startsWith('thread:'))
             for (const key of threadKeys) {
               const exp = JSON.parse(sessionStorage.getItem(key) || 'null') as {
                 papers?: Array<{ id?: string; title: string; relevanceReason?: string }>
@@ -598,23 +625,41 @@ export default function PaperPage() {
               const next = idx >= 0 ? exp.papers[idx + 1] : null
               if (!next?.id) continue
               return (
-                <div
-                  className="mt-16 mb-8 p-5 rounded-xl cursor-pointer"
-                  style={{ backgroundColor: '#111827', border: '1px solid #00d4aa33' }}
-                  onClick={() => router.push(`/paper/${encodeURIComponent(next.id!)}`)}
+                <button
+                  type="button"
+                  className="ui-panel group mb-8 mt-16 w-full p-5 text-left"
+                  onClick={() => {
+                    if (activeThreadId && paper.id) {
+                      try {
+                        const progressKey = `thread-progress:${activeThreadId}`
+                        const completed = JSON.parse(localStorage.getItem(progressKey) || '[]') as string[]
+                        localStorage.setItem(progressKey, JSON.stringify(Array.from(new Set([...completed, paper.id]))))
+                      } catch {
+                        // Progress is additive; navigation should never be blocked.
+                      }
+                    }
+                    router.push(
+                      `/paper/${encodeURIComponent(next.id!)}${
+                        activeThreadId ? `?thread=${encodeURIComponent(activeThreadId)}` : ''
+                      }`
+                    )
+                  }}
                 >
-                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#00d4aa' }}>
+                  <p className="ui-label mb-2" style={{ color: 'var(--teal)' }}>
                     Continue the path
                   </p>
-                  <p className="text-sm font-medium" style={{ color: '#e8e0d0' }}>
+                  <div className="flex items-center justify-between gap-4">
+                    <p className="font-display text-base font-semibold">
                     {next.title}
-                  </p>
+                    </p>
+                    <span className="font-mono transition-transform group-hover:translate-x-1">→</span>
+                  </div>
                   {next.relevanceReason && (
-                    <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
+                    <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                       {next.relevanceReason}
                     </p>
                   )}
-                </div>
+                </button>
               )
             }
           } catch {
@@ -755,50 +800,116 @@ export default function PaperPage() {
           </section>
         )}
 
-        {/* Section navigation */}
-        {sections.length > 1 && (
-          <div className="sticky bottom-6 flex justify-center gap-2 mt-8">
-            <button
-              onClick={() => scrollToSection(currentSectionIndex - 1)}
-              disabled={currentSectionIndex === 0}
-              className="px-4 py-2 rounded-lg text-sm bg-surface text-text-muted border border-surface-2 disabled:opacity-40"
-            >
-              ↑ Prev (K)
-            </button>
-            <span className="px-3 py-2 text-xs font-mono text-text-muted">
-              {currentSectionIndex + 1} / {sections.length}
-            </span>
-            <button
-              onClick={() => scrollToSection(currentSectionIndex + 1)}
-              disabled={currentSectionIndex === sections.length - 1}
-              className="px-4 py-2 rounded-lg text-sm bg-surface text-text-muted border border-surface-2 disabled:opacity-40"
-            >
-              ↓ Next (J)
-            </button>
-          </div>
-        )}
       </main>
 
-      {/* Concept Map — ambient growing widget */}
-      <ConceptMap
-        nodes={conceptMapNodes}
-        onNodeClick={(node) => {
-          if (node.sectionId) {
-            const el = document.getElementById(node.sectionId)
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          }
-        }}
-      />
+        <aside className="hidden xl:block">
+          <div
+            className="sticky top-[calc(var(--app-header)+24px)] space-y-1 rounded-xl border p-1.5"
+            style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+            aria-label="Paper tools"
+          >
+            {[
+              {
+                label: 'Explore citations',
+                short: 'Explore',
+                symbol: '◎',
+                action: () => setShowCitationGraph(true),
+              },
+              {
+                label: 'Open interactive lab',
+                short: 'Lab',
+                symbol: '⌬',
+                action: () => setShowNotebook(true),
+              },
+              {
+                label: 'Open terms and notation',
+                short: 'Terms',
+                symbol: 'Ω',
+                action: () => setShowGlossary(true),
+              },
+              {
+                label: showConceptMap ? 'Hide concept map' : 'Show concept map',
+                short: 'Map',
+                symbol: '⌘',
+                action: () => setShowConceptMap((value) => !value),
+              },
+              {
+                label: 'Discover related work',
+                short: discoverLoading ? 'Finding' : 'Related',
+                symbol: discoverLoading ? '…' : '↗',
+                action: handleDiscoverRelated,
+                disabled: discoverLoading,
+              },
+              {
+                label: 'Keyboard shortcuts',
+                short: 'Keys',
+                symbol: '?',
+                action: () => setShowHelp(true),
+              },
+            ].map((tool) => (
+              <button
+                key={tool.short}
+                type="button"
+                className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 transition-colors hover:bg-white/[0.035] disabled:opacity-40"
+                onClick={tool.action}
+                disabled={tool.disabled}
+                title={tool.label}
+                aria-label={tool.label}
+              >
+                <span className="font-mono text-sm" style={{ color: 'var(--teal)' }}>
+                  {tool.symbol}
+                </span>
+                <span className="font-display text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                  {tool.short}
+                </span>
+              </button>
+            ))}
+            <div className="my-1 h-px" style={{ background: 'var(--border-subtle)' }} />
+            {pdfFileId ? (
+              <a
+                href={`/api/papers/${safeEncodeId(params.id as string)}/pdf`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-col items-center gap-1 rounded-lg px-1 py-2"
+                title="Open saved PDF"
+              >
+                <span className="font-mono text-sm" style={{ color: 'var(--teal)' }}>⇩</span>
+                <span className="font-display text-[9px]" style={{ color: 'var(--text-muted)' }}>PDF</span>
+              </a>
+            ) : (
+              <button
+                type="button"
+                className="flex w-full flex-col items-center gap-1 rounded-lg px-1 py-2 disabled:opacity-40"
+                onClick={() => void handleSavePdf()}
+                disabled={pdfStatus === 'generating'}
+                title="Save a reading copy"
+              >
+                <span className="font-mono text-sm" style={{ color: pdfStatus === 'error' ? 'var(--danger)' : 'var(--teal)' }}>
+                  {pdfStatus === 'generating' ? '…' : '⇩'}
+                </span>
+                <span className="font-display text-[9px]" style={{ color: 'var(--text-muted)' }}>
+                  {pdfStatus === 'generating' ? pdfStatusMsg : 'Export'}
+                </span>
+              </button>
+            )}
+          </div>
+          <div className="mt-3 flex justify-center">
+            <SoundToggle denser={readingMode === 'deep-dive'} />
+          </div>
+        </aside>
+      </div>
 
-      {/* Depth Meter */}
-      <DepthMeter depth={depth} />
-
-      <SpacedReExposureStrip
+      <ReadingStatusBar
+        sectionTitle={sections[currentSectionIndex]?.title}
+        sectionIndex={currentSectionIndex}
+        sectionCount={sections.length}
+        depth={depth}
         terms={(paper.variables || []).slice(0, 8).map((v) => ({
           term: v.symbol,
           definition: v.definition || v.name,
-          section: v.firstSeenSectionId || 'earlier',
         }))}
+        onPrevious={() => scrollToSection(currentSectionIndex - 1)}
+        onNext={() => scrollToSection(currentSectionIndex + 1)}
       />
     </div>
   )

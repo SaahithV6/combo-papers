@@ -1,35 +1,60 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import SearchInput from '@/components/Search/SearchInput'
 import PaperList from '@/components/Search/PaperList'
-import { PaperMetadata, ProcessedPaper } from '@/lib/types'
+import LearnerMemoryPanel from '@/components/Learner/LearnerMemoryPanel'
 import { useButterbaseAuth } from '@/components/ButterbaseProvider'
 import { useLearnerId } from '@/hooks/useLearnerId'
-import LearnerMemoryPanel from '@/components/Learner/LearnerMemoryPanel'
 import type { MentorTurn } from '@/lib/agent/types'
+import type { PaperMetadata, ProcessedPaper } from '@/lib/types'
 
 type SearchStatus = 'idle' | 'searching' | 'results' | 'processing'
+type ProcessingState = Record<string, string>
 
-interface ProcessingState {
-  [paperId: string]: string
+const PROCESS_STAGES = [
+  'Find and rank sources',
+  'Build Living Pages',
+  'Compare approaches',
+  'Open research path',
+]
+
+function PlanKind({ kind }: { kind: string }) {
+  const labels: Record<string, string> = {
+    prerequisite: 'Ground',
+    paper: 'Read',
+    checkpoint: 'Reflect',
+    lab: 'Explore',
+    synthesis: 'Synthesize',
+  }
+  return <span className="ui-chip shrink-0">{labels[kind] || kind}</span>
 }
 
 export default function HomePage() {
   const router = useRouter()
-  const { user, configured, signOut } = useButterbaseAuth()
-  const { userId: learnerUserId, email: learnerEmail, ready: learnerReady } = useLearnerId()
+  const { user, configured } = useButterbaseAuth()
+  const {
+    userId: learnerUserId,
+    email: learnerEmail,
+    ready: learnerReady,
+    authHeaders,
+  } = useLearnerId()
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [papers, setPapers] = useState<PaperMetadata[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [processingStatus, setProcessingStatus] = useState<ProcessingState>({})
   const [error, setError] = useState<string | null>(null)
-  const [searchSource, setSearchSource] = useState<string>('')
+  const [searchSource, setSearchSource] = useState('')
   const [mentor, setMentor] = useState<MentorTurn | null>(null)
   const [institutionalDomain, setInstitutionalDomain] = useState<string | null>(null)
   const [lastQuery, setLastQuery] = useState('')
   const [library, setLibrary] = useState<Record<string, unknown> | null>(null)
+
+  const completeCount = useMemo(
+    () => Object.values(processingStatus).filter((value) => value === 'complete').length,
+    [processingStatus]
+  )
 
   const handleSearch = async (query: string) => {
     setStatus('searching')
@@ -44,419 +69,413 @@ export default function HomePage() {
     try {
       const response = await fetch('/api/agent/search', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           query,
           userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
-          email: learnerEmail || (user?.email as string | undefined) || 'sarveera@ucsc.edu',
+          email: learnerEmail || (user?.email as string | undefined),
         }),
       })
-
-      if (!response.ok) throw new Error('Agent search failed')
-
       const data = await response.json()
-      setPapers(data.papers || [])
-      setSearchSource(data.source || 'hybrid')
+      if (!response.ok) throw new Error(data.error || 'The research agent could not complete that search.')
+
+      const nextPapers = (data.papers || []) as PaperMetadata[]
+      setPapers(nextPapers)
+      setSearchSource(data.source || 'hybrid discovery')
       setMentor(data.mentor || null)
       setInstitutionalDomain(data.institutional?.domain || null)
       setLibrary(data.library || null)
+      setSelectedIds(
+        nextPapers
+          .slice(0, 5)
+          .map((paper) => paper.id)
+          .filter((id): id is string => Boolean(id))
+      )
       setStatus('results')
-      setSelectedIds((data.papers || []).slice(0, 5).map((p: PaperMetadata) => p.id))
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Search failed')
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Search failed. Try the guided demo.')
       setStatus('idle')
     }
   }
 
   const handlePaperToggle = (paper: PaperMetadata) => {
     if (!paper.id) return
-    setSelectedIds((prev) =>
-      prev.includes(paper.id!)
-        ? prev.filter((id) => id !== paper.id)
-        : [...prev, paper.id!]
+    setSelectedIds((current) =>
+      current.includes(paper.id!)
+        ? current.filter((id) => id !== paper.id)
+        : [...current, paper.id!]
     )
-  }
-
-  const handleOpenDemo = () => {
-    router.push(`/paper/${encodeURIComponent('arxiv:2209.11895')}`)
   }
 
   const handleProcessSelected = async () => {
     if (selectedIds.length === 0) return
     setStatus('processing')
+    setError(null)
 
-    const selected = papers.filter((p) => p.id && selectedIds.includes(p.id))
+    const selected = papers.filter((paper) => paper.id && selectedIds.includes(paper.id))
     const query = lastQuery || mentor?.plan?.query || 'research topic'
 
-    const processPromises = selected.map(async (paper) => {
-      setProcessingStatus((prev) => ({ ...prev, [paper.id!]: 'processing...' }))
-
-      try {
-        const response = await fetch('/api/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paper }),
-        })
-
-        if (!response.ok) throw new Error('Processing failed')
-
-        const data = await response.json()
-        const processedPaper: ProcessedPaper = {
-          ...data.paper,
-          id: paper.id,
-          relevanceReason: paper.relevanceReason || data.paper?.relevanceReason,
-        }
-
+    const processed = await Promise.all(
+      selected.map(async (paper) => {
+        setProcessingStatus((current) => ({ ...current, [paper.id!]: 'Building page' }))
         try {
-          sessionStorage.setItem(`paper:${paper.id}`, JSON.stringify(processedPaper))
+          const response = await fetch('/api/process', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeaders },
+            body: JSON.stringify({ paper }),
+          })
+          const data = await response.json()
+          if (!response.ok) throw new Error(data.error || 'Processing failed')
+
+          const ready: ProcessedPaper = {
+            ...data.paper,
+            id: paper.id,
+            relevanceReason: paper.relevanceReason || data.paper?.relevanceReason,
+          }
+          sessionStorage.setItem(`paper:${paper.id}`, JSON.stringify(ready))
+          setProcessingStatus((current) => ({ ...current, [paper.id!]: 'complete' }))
+          return ready
         } catch {
-          // Storage might be full
+          setProcessingStatus((current) => ({ ...current, [paper.id!]: 'error' }))
+          return null
         }
+      })
+    )
 
-        setProcessingStatus((prev) => ({ ...prev, [paper.id!]: 'complete' }))
-        return processedPaper
-      } catch {
-        setProcessingStatus((prev) => ({ ...prev, [paper.id!]: 'error' }))
-        return null
-      }
-    })
-
-    const settled = await Promise.all(processPromises)
-    const ready = settled.filter(Boolean) as ProcessedPaper[]
-
+    const ready = processed.filter(Boolean) as ProcessedPaper[]
     if (ready.length === 0) {
-      setError('No papers processed successfully')
+      setError('None of the selected papers could be prepared. Try the guided demo instead.')
       setStatus('results')
       return
     }
 
-    // Multi-paper: build shareable experience + conflict analysis, open thread
-    if (ready.length >= 2) {
-      let conflicts = null
-      try {
-        const conflictRes = await fetch('/api/agent/conflicts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query,
-            userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
-            papers: ready.map((p) => ({
-              id: p.id,
-              title: p.title,
-              venue: p.venue,
-              year: p.year,
-              tldr: p.tldr,
-              relevanceReason: p.relevanceReason,
-            })),
-          }),
-        })
-        if (conflictRes.ok) {
-          const cdata = await conflictRes.json()
-          conflicts = cdata.analysis
-        }
-      } catch {
-        /* non-blocking */
-      }
+    if (ready.length === 1) {
+      router.push(`/paper/${encodeURIComponent(ready[0].id!)}`)
+      return
+    }
 
-      const saveRes = await fetch('/api/experiences', {
+    let conflicts = null
+    try {
+      const response = await fetch('/api/agent/conflicts', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           query,
-          title: mentor?.plan?.title || `Learning path: ${query}`,
-          papers: ready,
-          conflicts,
-          plan: mentor?.plan || null,
-          library,
-          userId: learnerReady ? learnerUserId : user?.id || user?.email || 'anonymous',
+          userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
+          papers: ready.map((paper) => ({
+            id: paper.id,
+            title: paper.title,
+            venue: paper.venue,
+            year: paper.year,
+            tldr: paper.tldr,
+            relevanceReason: paper.relevanceReason,
+          })),
         }),
       })
+      if (response.ok) conflicts = (await response.json()).analysis
+    } catch {
+      // Conflict analysis is additive; a path still works without it.
+    }
 
-      const saveData = saveRes.ok ? await saveRes.json() : { id: `local_${Date.now()}` }
-      const experience = {
-        id: saveData.id,
+    const saveResponse = await fetch('/api/experiences', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders },
+      body: JSON.stringify({
         query,
-        title: mentor?.plan?.title || `Learning path: ${query}`,
+        title: mentor?.plan?.title || `Research path: ${query}`,
         papers: ready,
         conflicts,
         plan: mentor?.plan || null,
         library,
-      }
-      try {
-        sessionStorage.setItem(`thread:${saveData.id}`, JSON.stringify(experience))
-      } catch {
-        /* ignore */
-      }
-      router.push(`/thread/${encodeURIComponent(saveData.id)}`)
-      return
-    }
+        userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
+      }),
+    })
 
-    // Single paper: go straight to Living Page
-    router.push(`/paper/${encodeURIComponent(ready[0].id!)}`)
+    const save = saveResponse.ok ? await saveResponse.json() : { id: `local_${Date.now()}` }
+    const experience = {
+      id: save.id,
+      query,
+      title: mentor?.plan?.title || `Research path: ${query}`,
+      papers: ready,
+      conflicts,
+      plan: mentor?.plan || null,
+      library,
+    }
+    sessionStorage.setItem(`thread:${save.id}`, JSON.stringify(experience))
+    router.push(`/thread/${encodeURIComponent(save.id)}`)
   }
 
-  const anyComplete = selectedIds.some((id) => processingStatus[id] === 'complete')
+  const isWorking = status === 'searching' || status === 'processing'
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ backgroundColor: '#0a0e14', backgroundImage: "url('/grid-texture.svg')" }}
-    >
-      <div className="absolute top-4 right-6 z-10 flex items-center gap-3">
-        {user ? (
+    <div className="min-h-[calc(100vh-var(--app-header))]">
+      <div className="mx-auto max-w-[1240px] px-4 py-10 md:px-8 md:py-16">
+        {status === 'idle' && (
           <>
-            <span className="text-xs" style={{ color: '#9ca3af' }}>
-              {String(user.email || user.id)}
-            </span>
-            <button
-              onClick={() => void signOut()}
-              className="px-3 py-1.5 rounded-lg text-sm"
-              style={{ border: '1px solid #1a2235', color: '#e8e0d0' }}
-            >
-              Sign out
-            </button>
+            <section className="grid items-center gap-10 lg:grid-cols-[1.05fr_.95fr] lg:gap-16">
+              <div>
+                <div className="mb-6 flex flex-wrap items-center gap-2">
+                  <span className="ui-chip" style={{ color: 'var(--teal)' }}>
+                    Research workspace
+                  </span>
+                  <span className="ui-chip">Plan · compare · learn · remember</span>
+                </div>
+                <h1 className="max-w-3xl font-display text-4xl font-semibold leading-[1.06] tracking-[-0.04em] md:text-6xl">
+                  Turn a field of papers into{' '}
+                  <span style={{ color: 'var(--teal)' }}>working intuition.</span>
+                </h1>
+                <p
+                  className="mt-6 max-w-2xl text-lg leading-relaxed"
+                  style={{ color: 'var(--text-secondary)' }}
+                >
+                  Gather the literature, see where approaches disagree, and learn through interactive
+                  explanations and runnable visual models—without flattening the research into chat.
+                </p>
+                <div className="mt-8 grid max-w-2xl grid-cols-3 gap-2">
+                  {[
+                    ['01', 'Orient', 'A path, not a list'],
+                    ['02', 'Compare', 'Tradeoffs with evidence'],
+                    ['03', 'Understand', 'Living Pages and labs'],
+                  ].map(([number, title, body]) => (
+                    <div key={title} className="border-t pt-3" style={{ borderColor: 'var(--border)' }}>
+                      <p className="font-mono text-[10px]" style={{ color: 'var(--teal)' }}>
+                        {number}
+                      </p>
+                      <p className="mt-1 font-display text-xs font-semibold md:text-sm">{title}</p>
+                      <p className="mt-1 hidden text-xs sm:block" style={{ color: 'var(--text-muted)' }}>
+                        {body}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="ui-panel p-4 sm:p-6">
+                <div className="mb-5 flex items-center justify-between">
+                  <div>
+                    <p className="ui-label">Start a research path</p>
+                    <p className="mt-1 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      A topic, question, or decision you need to understand.
+                    </p>
+                  </div>
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ background: configured ? 'var(--teal)' : 'var(--amber)' }}
+                    title={configured ? 'Persistence connected' : 'Local demo mode'}
+                  />
+                </div>
+                <SearchInput onSearch={handleSearch} isLoading={false} />
+                <div className="mt-5 border-t pt-4" style={{ borderColor: 'var(--border-subtle)' }}>
+                  <button
+                    type="button"
+                    onClick={() => void handleSearch('mechanistic interpretability in large language models')}
+                    className="group flex w-full items-center justify-between gap-4 rounded-lg p-2 text-left transition-colors hover:bg-white/[0.025]"
+                  >
+                    <span>
+                      <span className="ui-label" style={{ color: 'var(--amber)' }}>
+                        Guided demo
+                      </span>
+                      <span className="mt-1 block text-sm">Mechanistic interpretability</span>
+                    </span>
+                    <span className="font-mono text-sm transition-transform group-hover:translate-x-1">
+                      →
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section className="mt-12 grid gap-4 lg:grid-cols-[1.2fr_.8fr]">
+              <LearnerMemoryPanel />
+              <div className="ui-panel p-5">
+                <p className="ui-label">What survives the session</p>
+                <div className="mt-4 space-y-4">
+                  {[
+                    ['Your friction', 'Concepts you struggled with shape the next path.'],
+                    ['Your choices', 'The approaches you select become research context.'],
+                    ['Your work', 'Threads, notes, and labs remain usable and shareable.'],
+                  ].map(([title, body]) => (
+                    <div key={title} className="flex gap-3">
+                      <span
+                        className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full"
+                        style={{ background: 'var(--teal)' }}
+                      />
+                      <div>
+                        <p className="font-display text-xs font-semibold">{title}</p>
+                        <p className="mt-1 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                          {body}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
           </>
-        ) : (
-          <button
-            onClick={() => router.push('/sign-in')}
-            className="px-4 py-2 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: '#00d4aa', color: '#0a0e14' }}
-          >
-            Sign in
-          </button>
         )}
-      </div>
 
-      <div className="max-w-4xl mx-auto px-6 py-20">
-        <div className="text-center mb-16">
-          <div
-            className="inline-flex items-center gap-2 px-3 py-1 rounded-full mb-6 text-xs"
-            style={{
-              backgroundColor: '#111827',
-              border: '1px solid #00d4aa22',
-              color: '#00d4aa',
-            }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full animate-pulse"
-              style={{ backgroundColor: '#00d4aa' }}
-            />
-            Lifelong Learning Agent · Butterbase × EverOS
-          </div>
+        {isWorking && (
+          <section className="mx-auto max-w-3xl py-16" aria-live="polite">
+            <p className="ui-label mb-3" style={{ color: 'var(--teal)' }}>
+              {status === 'searching' ? 'Orienting' : 'Preparing your workspace'}
+            </p>
+            <h1 className="font-display text-3xl font-semibold md:text-4xl">
+              {status === 'searching'
+                ? `Mapping “${lastQuery}”`
+                : `Turning ${selectedIds.length} papers into a learning path`}
+            </h1>
+            <div className="mt-10 space-y-2">
+              {PROCESS_STAGES.map((stage, index) => {
+                const activeIndex =
+                  status === 'searching'
+                    ? 0
+                    : completeCount < selectedIds.length
+                      ? 1
+                      : 2
+                const done = index < activeIndex
+                const active = index === activeIndex
+                return (
+                  <div
+                    key={stage}
+                    className="flex items-center gap-4 rounded-xl border px-4 py-3"
+                    style={{
+                      borderColor: active ? 'rgba(79, 209, 181, 0.3)' : 'var(--border-subtle)',
+                      background: active ? 'var(--teal-soft)' : 'transparent',
+                      color: done || active ? 'var(--text)' : 'var(--text-muted)',
+                    }}
+                  >
+                    <span
+                      className={active ? 'animate-pulse' : ''}
+                      style={{ color: done || active ? 'var(--teal)' : 'var(--text-muted)' }}
+                    >
+                      {done ? '✓' : String(index + 1).padStart(2, '0')}
+                    </span>
+                    <span className="font-display text-sm">{stage}</span>
+                    {active && <span className="ml-auto ui-label">In progress</span>}
+                  </div>
+                )
+              })}
+            </div>
+            {status === 'processing' && completeCount > 0 && (
+              <button
+                type="button"
+                className="ui-button mt-6"
+                onClick={() => {
+                  const first = selectedIds.find((id) => processingStatus[id] === 'complete')
+                  if (first) router.push(`/paper/${encodeURIComponent(first)}`)
+                }}
+              >
+                Read the first ready page while we finish →
+              </button>
+            )}
+          </section>
+        )}
 
-          <h1
-            className="text-5xl md:text-6xl font-bold mb-4 leading-tight"
-            style={{ color: '#e8e0d0', fontFamily: 'Syne, sans-serif' }}
-          >
-            Combo Papers
-          </h1>
-
-          <p
-            className="text-lg mb-8 max-w-xl mx-auto leading-relaxed"
-            style={{ color: '#9ca3af', fontFamily: 'IBM Plex Serif, serif' }}
-          >
-            Not a paper search box — a mentor that pulls many papers on one topic, surfaces conflicts with pros/cons, and turns literature into shareable Living Pages with embeddable notebooks.
-          </p>
-
-          <button
-            onClick={handleOpenDemo}
-            className="mb-4 px-5 py-2.5 rounded-lg text-sm transition-all"
-            style={{
-              backgroundColor: '#111827',
-              color: '#f5a623',
-              border: '1px solid #f5a62333',
-            }}
-          >
-            → Try demo: Mechanistic Interpretability
-          </button>
-
-          <div className="mb-8 flex items-center justify-center gap-3 flex-wrap">
+        {status === 'results' && (
+          <section>
             <button
-              onClick={() => router.push('/saved')}
-              className="px-4 py-2 rounded-lg text-sm transition-all"
-              style={{
-                backgroundColor: '#111827',
-                color: '#00d4aa',
-                border: '1px solid #00d4aa33',
+              type="button"
+              className="ui-button ui-button-ghost mb-6"
+              onClick={() => {
+                setStatus('idle')
+                setPapers([])
+                setMentor(null)
               }}
             >
-              Saved Papers
+              ← Refine question
             </button>
-            {!configured && (
-              <span className="text-xs" style={{ color: '#9ca3af' }}>
-                Demo mode · add Butterbase keys when ready
-              </span>
-            )}
-          </div>
-        </div>
 
-        <div className="mb-12">
-          <SearchInput onSearch={handleSearch} isLoading={status === 'searching'} />
-          <LearnerMemoryPanel />
-        </div>
+            <div className="grid gap-7 lg:grid-cols-[340px_minmax(0,1fr)]">
+              <aside className="space-y-4 lg:sticky lg:top-[calc(var(--app-header)+24px)] lg:self-start">
+                <div className="ui-panel p-5">
+                  <div className="mb-4 flex items-center justify-between gap-2">
+                    <p className="ui-label" style={{ color: 'var(--teal)' }}>
+                      Your learning path
+                    </p>
+                    {institutionalDomain && <span className="ui-chip">{institutionalDomain}</span>}
+                  </div>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                    {mentor?.message || 'Choose the sources that belong in this path.'}
+                  </p>
+                  {mentor?.plan?.steps && (
+                    <ol className="mt-5 space-y-2">
+                      {mentor.plan.steps.slice(0, 8).map((step) => (
+                        <li key={step.id} className="flex items-start gap-2.5">
+                          <PlanKind kind={step.kind} />
+                          <span className="pt-1 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                            {step.title}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+                <LearnerMemoryPanel />
+              </aside>
 
-        {status === 'searching' && (
-          <div className="text-center py-8">
-            <div className="text-2xl mb-3 animate-spin inline-block">⟳</div>
-            <p style={{ color: '#9ca3af' }}>Mentor agent planning your learning path…</p>
-            <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
-              Searching journals + preprints · ranking by relevance · drafting curriculum
-            </p>
-          </div>
+              <div>
+                <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
+                  <div>
+                    <p className="ui-label">Source set</p>
+                    <h2 className="mt-1 font-display text-2xl font-semibold">
+                      {papers.length} relevant papers
+                    </h2>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      {selectedIds.length} selected · {searchSource}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-button ui-button-primary"
+                    disabled={selectedIds.length === 0}
+                    onClick={() => void handleProcessSelected()}
+                  >
+                    Build path with {selectedIds.length} paper{selectedIds.length === 1 ? '' : 's'} →
+                  </button>
+                </div>
+
+                {papers.length > 0 ? (
+                  <PaperList
+                    papers={papers}
+                    onSelectPaper={handlePaperToggle}
+                    selectedIds={selectedIds}
+                    processingStatus={processingStatus}
+                  />
+                ) : (
+                  <div className="ui-panel p-8 text-center">
+                    <p className="font-display text-lg font-semibold">No useful source set yet.</p>
+                    <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                      Broaden the question, remove a date constraint, or use the guided demo.
+                    </p>
+                    <button
+                      type="button"
+                      className="ui-button mt-5"
+                      onClick={() => void handleSearch('mechanistic interpretability in large language models')}
+                    >
+                      Open guided demo
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </section>
         )}
 
         {error && (
-          <div className="text-center py-4">
-            <p style={{ color: '#f5a623' }}>{error}</p>
-          </div>
-        )}
-
-        {mentor && (status === 'results' || status === 'processing') && (
           <div
-            className="mb-6 p-4 rounded-xl"
-            style={{ backgroundColor: '#111827', border: '1px solid #00d4aa33' }}
+            className="fixed bottom-5 left-1/2 z-[100] flex max-w-[min(560px,calc(100vw-32px))] -translate-x-1/2 items-center gap-3 rounded-xl border px-4 py-3 shadow-2xl"
+            style={{
+              color: 'var(--text)',
+              borderColor: 'rgba(239, 127, 127, 0.35)',
+              background: 'var(--surface)',
+            }}
+            role="alert"
           >
-            <p className="text-xs mb-2 uppercase tracking-wide" style={{ color: '#00d4aa' }}>
-              Mentor · {mentor.mode}
-              {institutionalDomain ? ` · ${institutionalDomain}` : ''}
-            </p>
-            <p
-              className="text-sm leading-relaxed mb-3"
-              style={{ color: '#e8e0d0', fontFamily: 'IBM Plex Serif, serif' }}
-            >
-              {mentor.message}
-            </p>
-            {mentor.plan && (
-              <ol className="space-y-1.5 text-xs" style={{ color: '#9ca3af' }}>
-                {mentor.plan.steps.slice(0, 6).map((step, i) => (
-                  <li key={step.id}>
-                    {i + 1}. [{step.kind}] {step.title}
-                  </li>
-                ))}
-              </ol>
-            )}
-          </div>
-        )}
-
-        {(status === 'results' || status === 'processing') && papers.length > 0 && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2
-                  className="font-display"
-                  style={{ color: '#e8e0d0', fontFamily: 'Syne, sans-serif' }}
-                >
-                  {papers.length} papers found
-                </h2>
-                <p className="text-xs" style={{ color: '#9ca3af' }}>
-                  via {searchSource} · {selectedIds.length} selected
-                </p>
-              </div>
-
-              <button
-                onClick={handleProcessSelected}
-                disabled={selectedIds.length === 0 || status === 'processing'}
-                className="px-5 py-2.5 rounded-lg text-sm font-display transition-all"
-                style={{
-                  backgroundColor: selectedIds.length === 0 ? '#1a2235' : '#00d4aa',
-                  color: selectedIds.length === 0 ? '#9ca3af' : '#0a0e14',
-                }}
-              >
-                {status === 'processing'
-                  ? `Processing ${Object.values(processingStatus).filter((s) => s === 'complete').length}/${selectedIds.length}...`
-                  : `Begin path · ${selectedIds.length} paper${selectedIds.length !== 1 ? 's' : ''} →`}
-              </button>
-            </div>
-
-            <PaperList
-              papers={papers}
-              onSelectPaper={handlePaperToggle}
-              selectedIds={selectedIds}
-              processingStatus={processingStatus}
-            />
-
-            {status === 'processing' && anyComplete && (
-              <div
-                className="mt-4 p-3 rounded-lg text-center animate-fade-in"
-                style={{ backgroundColor: '#111827', border: '1px solid #00d4aa22' }}
-              >
-                <p className="text-sm" style={{ color: '#00d4aa' }}>
-                  First paper ready — start the living page now
-                </p>
-                <button
-                  onClick={() => {
-                    const firstComplete = selectedIds.find(
-                      (id) => processingStatus[id] === 'complete'
-                    )
-                    if (firstComplete)
-                      router.push(`/paper/${encodeURIComponent(firstComplete)}`)
-                  }}
-                  className="mt-2 text-xs px-3 py-1.5 rounded"
-                  style={{ backgroundColor: '#00d4aa', color: '#0a0e14' }}
-                >
-                  Start reading →
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-
-        {status === 'idle' && (
-          <div className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[
-              {
-                icon: '◎',
-                title: 'Multi-paper mentor',
-                desc: 'One query → a learning path across papers. When methods conflict, see pros/cons and choose an approach.',
-              },
-              {
-                icon: '∑',
-                title: 'Living Pages',
-                desc: 'Equations, variables, evidence chains, rabbit holes — the paper becomes the classroom.',
-              },
-              {
-                icon: '⌬',
-                title: 'In-page notebooks',
-                desc: 'Embeddable Pyodide labs with a numpy/matplotlib base set, plus .ipynb download / Colab.',
-              },
-              {
-                icon: '◈',
-                title: 'UCSC Library + OpenAthens',
-                desc: 'Articles and books via UC Library Search; closed full-text after one CruzID click.',
-              },
-              {
-                icon: '⟳',
-                title: 'Save & share',
-                desc: 'Turn a session into a shareable research experience others can reopen and learn from.',
-              },
-              {
-                icon: '⚡',
-                title: 'EverOS memory',
-                desc: 'Remembers gaps and trajectories so onboarding compounds — not one-shot chat.',
-              },
-            ].map(({ icon, title, desc }) => (
-              <div
-                key={title}
-                className="p-4 rounded-xl"
-                style={{ backgroundColor: '#111827', border: '1px solid #1a2235' }}
-              >
-                <div className="text-2xl mb-2 font-mono" style={{ color: '#00d4aa' }}>
-                  {icon}
-                </div>
-                <h3
-                  className="font-display text-sm font-medium mb-1"
-                  style={{ color: '#e8e0d0', fontFamily: 'Syne, sans-serif' }}
-                >
-                  {title}
-                </h3>
-                <p
-                  className="text-xs leading-relaxed"
-                  style={{ color: '#9ca3af', fontFamily: 'IBM Plex Serif, serif' }}
-                >
-                  {desc}
-                </p>
-              </div>
-            ))}
+            <span style={{ color: 'var(--danger)' }}>!</span>
+            <p className="text-sm">{error}</p>
+            <button type="button" className="ui-button ui-button-ghost ml-auto" onClick={() => setError(null)}>
+              Dismiss
+            </button>
           </div>
         )}
       </div>

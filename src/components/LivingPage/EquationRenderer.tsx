@@ -41,6 +41,16 @@ export default function EquationRenderer({ equation, onExpand }: EquationRendere
       ref={ref}
       className="my-6 group cursor-pointer"
       onClick={handleExpand}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          handleExpand()
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-expanded={isExpanded}
+      data-equation-trigger
     >
       <div
         className="p-4 rounded-lg transition-all duration-300"

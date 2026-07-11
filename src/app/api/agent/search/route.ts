@@ -12,9 +12,10 @@ import {
   rankForInstitutionalAccess,
   resolveJournalAccess,
 } from '@/lib/institutional'
-import { getButterbaseAdmin } from '@/lib/butterbase'
 import { ensureLearner, getLearnerRow, rowToProfile } from '@/lib/learner'
 import demoData from '@/data/demo-fallback.json'
+import { authErrorResponse, resolveRequestUserId } from '@/lib/serverAuth'
+import { checkRateLimit } from '@/lib/rateLimit'
 
 export const runtime = 'nodejs'
 export const maxDuration = 60
@@ -48,10 +49,21 @@ function deduplicatePapers(papers: PaperMetadata[]): PaperMetadata[] {
 
 export async function POST(request: NextRequest) {
   try {
+    const rate = checkRateLimit(request, 'agent-search', { limit: 12, windowMs: 5 * 60_000 })
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: 'Search limit reached. Try again shortly or open the guided demo.' },
+        { status: 429, headers: { 'Retry-After': String(rate.retryAfter) } }
+      )
+    }
     const body = await request.json()
     const query = body.query as string
-    const email = (body.email as string | undefined) || process.env.INSTITUTIONAL_EMAIL
-    const userId = (body.userId as string | undefined) || 'anonymous'
+    const identity = await resolveRequestUserId(
+      request,
+      (body.userId as string | undefined) || 'anonymous'
+    )
+    const userId = identity.userId
+    const email = identity.email || process.env.INSTITUTIONAL_EMAIL
     const knownConcepts = (body.knownConcepts as string[] | undefined) || []
     const gapConcepts = (body.gapConcepts as string[] | undefined) || []
     const goals = (body.goals as string[] | undefined) || []
@@ -146,23 +158,6 @@ export async function POST(request: NextRequest) {
 
     const mentor = await mentorOrient({ query, papers, profile })
 
-    // Persist thread + plan when Butterbase is configured
-    const admin = getButterbaseAdmin()
-    if (admin && mentor.plan) {
-      try {
-        await admin.from('learning_threads').insert({
-          user_id: userId,
-          query,
-          title: mentor.plan.title,
-          status: 'ready',
-          plan: mentor.plan,
-          paper_ids: papers.slice(0, 5).map((p) => p.id),
-        })
-      } catch (e) {
-        console.warn('Butterbase thread persist skipped:', e)
-      }
-    }
-
     return NextResponse.json({
       papers,
       source,
@@ -177,6 +172,8 @@ export async function POST(request: NextRequest) {
         : null,
     })
   } catch (error) {
+    const auth = authErrorResponse(error)
+    if (auth) return NextResponse.json(auth.body, { status: auth.status })
     console.error('Agent search error:', error)
     return NextResponse.json(
       {

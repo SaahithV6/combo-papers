@@ -1,6 +1,4 @@
 'use client'
-
-import { useState } from 'react'
 import { Section, Variable, Equation, ReadingMode, EvidenceChain as EvidenceChainType, Figure, NotebookCell as NotebookCellType } from '@/lib/types'
 import EquationRenderer from './EquationRenderer'
 import FigureViewer from './FigureViewer'
@@ -33,6 +31,7 @@ interface SectionRendererProps {
   learnerUserId?: string
   learnerEmail?: string
   paperId?: string
+  authHeaders?: Record<string, string>
 }
 
 function highlightVariables(
@@ -112,17 +111,17 @@ export default function SectionRenderer({
   learnerUserId,
   learnerEmail,
   paperId,
+  authHeaders,
 }: SectionRendererProps) {
-  const [activeParagraph, setActiveParagraph] = useState<number | null>(null)
   const sectionWarnings = notationWarnings.filter(
     (w) => w.sectionA === section.id || w.sectionB === section.id || w.sectionA === section.title || w.sectionB === section.title
   )
 
   return (
-    <section id={section.id} className="mb-12">
+    <section id={section.id} className="mb-16 scroll-mt-28">
       <ProgressiveReveal>
         <div className="flex items-start justify-between gap-3 mb-2 flex-wrap">
-          <h2 className="text-2xl font-display text-text" style={{ fontFamily: 'Syne, sans-serif' }}>
+          <h2 className="font-display text-2xl font-semibold tracking-[-0.02em] text-text">
             {section.title}
           </h2>
           {sectionWarnings.length > 0 && (
@@ -146,24 +145,22 @@ export default function SectionRenderer({
         <ProgressiveReveal key={block.id} delay={200 + i * 80}>
           {block.type === 'paragraph' && (
             <div
-              className="relative group mb-4"
-              onMouseEnter={() => setActiveParagraph(i)}
-              onMouseLeave={() => setActiveParagraph(null)}
+              className="group relative mb-5"
             >
               <p
                 id={block.id}
-                className="text-base leading-relaxed text-text font-serif"
-                style={{ lineHeight: '1.85' }}
+                className="reading-copy scroll-mt-28"
               >
                 {highlightVariables(block.raw, variables, onVariableHover, seenBeforeSymbols)}
               </p>
-              <div className={`mt-1 transition-opacity duration-200 ${activeParagraph === i ? 'opacity-100' : 'opacity-0'}`}>
+              <div className="mt-1 opacity-55 transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
                 <DontUnderstandButton
                   paragraph={block.raw}
                   paperTitle={paperTitle}
                   userId={learnerUserId}
                   email={learnerEmail}
                   paperId={paperId}
+                  authHeaders={authHeaders}
                 />
               </div>
             </div>

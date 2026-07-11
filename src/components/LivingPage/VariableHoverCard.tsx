@@ -25,28 +25,34 @@ export default function VariableHoverCard({
   }
 
   return (
-    <span className="relative inline-block">
-      <span
-        className="variable-highlight cursor-pointer"
+    <span className="relative inline-block" onMouseLeave={() => setIsOpen(false)}>
+      <button
+        type="button"
+        className="variable-highlight cursor-help font-mono"
         style={{
-          color: '#00d4aa',
-          borderBottom: seenBefore ? '2px solid #f5a623' : '1px dashed #00d4aa',
-          fontFamily: 'JetBrains Mono, monospace',
+          color: 'var(--teal)',
+          borderBottom: seenBefore ? '2px solid var(--amber)' : '1px dashed var(--teal)',
         }}
         title={seenBefore ? 'Seen in an earlier paper this session' : undefined}
+        aria-expanded={isOpen}
         onMouseEnter={() => {
           setIsOpen(true)
           onHover?.()
         }}
-        onMouseLeave={() => setIsOpen(false)}
-        onClick={() => setIsOpen(!isOpen)}
+        onFocus={() => {
+          setIsOpen(true)
+          onHover?.()
+        }}
+        onBlur={() => setIsOpen(false)}
+        onClick={() => setIsOpen((value) => !value)}
       >
         {children || symbol}
-      </span>
+      </button>
       {isOpen && (
         <div
-          className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 p-3 rounded-lg shadow-xl text-sm min-w-[200px] max-w-[300px]"
-          style={{ backgroundColor: '#111827', border: '1px solid #00d4aa', color: '#e8e0d0' }}
+          className="absolute bottom-full left-1/2 z-50 mb-2 min-w-[220px] max-w-[300px] -translate-x-1/2 rounded-lg border p-3 text-sm shadow-xl"
+          style={{ background: 'var(--surface)', borderColor: 'var(--teal)', color: 'var(--text)' }}
+          role="tooltip"
         >
           <div className="flex items-center justify-between mb-1">
             <span className="font-mono text-lg" style={{ color: '#00d4aa' }}>

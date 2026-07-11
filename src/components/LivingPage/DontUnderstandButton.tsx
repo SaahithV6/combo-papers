@@ -8,6 +8,7 @@ interface DontUnderstandButtonProps {
   userId?: string
   email?: string
   paperId?: string
+  authHeaders?: Record<string, string>
 }
 
 interface PrerequisiteResult {
@@ -24,6 +25,7 @@ export default function DontUnderstandButton({
   userId = 'anonymous',
   email,
   paperId,
+  authHeaders = {},
 }: DontUnderstandButtonProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<PrerequisiteResult | null>(null)
@@ -38,7 +40,7 @@ export default function DontUnderstandButton({
     try {
       const response = await fetch('/api/prerequisite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({ paragraph, paperTitle }),
       })
       
@@ -49,7 +51,7 @@ export default function DontUnderstandButton({
       // Feed the lifelong mentor so the plan adapts across sessions
       void fetch('/api/agent/adapt', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
         body: JSON.stringify({
           eventType: 'dont_understand',
           concept: data.concept,
@@ -80,6 +82,7 @@ export default function DontUnderstandButton({
         className="text-xs px-2 py-1 rounded transition-all opacity-40 hover:opacity-100"
         style={{ backgroundColor: '#1a2235', color: '#9ca3af', border: '1px solid #1a2235' }}
         title="I don't understand this (D)"
+        data-dont-understand
       >
         {isLoading ? '...' : result ? '✕ close' : "? I don't understand this"}
       </button>
