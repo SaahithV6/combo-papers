@@ -70,7 +70,7 @@ if _fig_b64:
       const msg = e instanceof Error ? e.message : 'Execution failed'
       setError(
         msg.includes('pure Python 3 wheel') || msg.includes('micropip') || msg.includes("Can't find")
-          ? "Some packages aren't available in the browser (Pyodide). Use the Daytona sandbox for full Python environment support."
+          ? "Some packages aren't available in the browser (Pyodide). Use Open in Colab for a full Python runtime."
           : msg
       )
     } finally {
