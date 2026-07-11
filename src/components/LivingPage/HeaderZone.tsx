@@ -7,14 +7,28 @@ interface HeaderZoneProps {
   paper: ProcessedPaper
   readingMode: ReadingMode
   onReadingModeChange: (mode: ReadingMode) => void
+  readersOnline?: number
 }
 
-export default function HeaderZone({ paper, readingMode, onReadingModeChange }: HeaderZoneProps) {
+export default function HeaderZone({
+  paper,
+  readingMode,
+  onReadingModeChange,
+  readersOnline,
+}: HeaderZoneProps) {
+  const jumpToSource = (sourceSentenceId: string) => {
+    const el = document.getElementById(sourceSentenceId)
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      el.classList.add('ring-2', 'ring-teal-400')
+      setTimeout(() => el.classList.remove('ring-2', 'ring-teal-400'), 1600)
+    }
+  }
+
   return (
     <header className="mb-8 pb-8" style={{ borderBottom: '1px solid #1a2235' }}>
-      {/* Venue + year */}
-      {(paper.venue || paper.year) && (
-        <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+        <div className="flex items-center gap-2">
           {paper.venue && (
             <span
               className="text-xs px-2 py-0.5 rounded font-mono"
@@ -24,12 +38,18 @@ export default function HeaderZone({ paper, readingMode, onReadingModeChange }: 
             </span>
           )}
           {paper.year && (
-            <span className="text-xs" style={{ color: '#9ca3af' }}>{paper.year}</span>
+            <span className="text-xs" style={{ color: '#9ca3af' }}>
+              {paper.year}
+            </span>
           )}
         </div>
-      )}
+        {typeof readersOnline === 'number' && readersOnline > 0 && (
+          <span className="text-xs" style={{ color: '#9ca3af' }}>
+            {readersOnline} other{readersOnline === 1 ? '' : 's'} reading
+          </span>
+        )}
+      </div>
 
-      {/* Title */}
       <h1
         className="text-3xl md:text-4xl font-display font-bold mb-3 leading-tight"
         style={{ color: '#e8e0d0', fontFamily: 'Syne, sans-serif' }}
@@ -37,33 +57,36 @@ export default function HeaderZone({ paper, readingMode, onReadingModeChange }: 
         {paper.title}
       </h1>
 
-      {/* Authors */}
       <p className="text-sm mb-4" style={{ color: '#9ca3af' }}>
         {paper.authors.slice(0, 5).join(', ')}
         {paper.authors.length > 5 && ` +${paper.authors.length - 5} more`}
       </p>
 
-      {/* Relevance reason */}
       {paper.relevanceReason && (
         <div
           className="mb-4 p-3 rounded-lg text-sm"
           style={{ backgroundColor: '#111827', border: '1px solid #00d4aa22' }}
         >
-          <span className="text-xs font-display uppercase tracking-wider mr-2" style={{ color: '#00d4aa' }}>
+          <span
+            className="text-xs font-display uppercase tracking-wider mr-2"
+            style={{ color: '#00d4aa' }}
+          >
             Why this matters
           </span>
           <span style={{ color: '#e8e0d0' }}>{paper.relevanceReason}</span>
         </div>
       )}
 
-      {/* TL;DR */}
       {paper.tldr && paper.tldr.length > 0 && (
         <div
           className="mb-6 p-4 rounded-lg"
           style={{ backgroundColor: '#111827', border: '1px solid #1a2235' }}
         >
-          <p className="text-xs font-display uppercase tracking-wider mb-2" style={{ color: '#00d4aa' }}>
-            TL;DR
+          <p
+            className="text-xs font-display uppercase tracking-wider mb-2"
+            style={{ color: '#00d4aa' }}
+          >
+            TL;DR · click to jump to source
           </p>
           <div className="space-y-1">
             {paper.tldr.map((item, i) => (
@@ -71,7 +94,8 @@ export default function HeaderZone({ paper, readingMode, onReadingModeChange }: 
                 key={i}
                 className="text-sm cursor-pointer hover:underline"
                 style={{ color: '#e8e0d0', fontFamily: 'IBM Plex Serif, serif' }}
-                title={`Source: "${item.sourceSentenceId}"`}
+                title={`Jump to ${item.sourceSentenceId}`}
+                onClick={() => jumpToSource(item.sourceSentenceId)}
               >
                 {item.sentence}
               </p>
@@ -80,7 +104,6 @@ export default function HeaderZone({ paper, readingMode, onReadingModeChange }: 
         </div>
       )}
 
-      {/* Reading mode + links */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <ReadingModeToggle mode={readingMode} onChange={onReadingModeChange} />
         <div className="flex gap-2">

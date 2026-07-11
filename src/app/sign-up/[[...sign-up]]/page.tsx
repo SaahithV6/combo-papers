@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useButterbaseAuth } from '@/components/ButterbaseProvider'
 
 export default function SignUpPage() {
-  const { signUp, configured } = useButterbaseAuth()
+  const { signUp, signInWithGoogle, configured } = useButterbaseAuth()
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -36,17 +36,35 @@ export default function SignUpPage() {
           Create account
         </h1>
         <p className="text-sm" style={{ color: '#9ca3af' }}>
-          Sign up with your institutional email so the agent can prefer peer-reviewed journal versions.
+          Sign up with Google or your institutional email so shared experiences and library ranking
+          follow you.
         </p>
         {!configured && (
           <p className="text-sm" style={{ color: '#f5a623' }}>
             Butterbase is not configured yet. Set NEXT_PUBLIC_BUTTERBASE_APP_ID after account setup.
           </p>
         )}
+
+        <button
+          type="button"
+          onClick={() => void signInWithGoogle().then((r) => r.error && setError(r.error))}
+          disabled={!configured}
+          className="w-full py-2.5 rounded-lg font-medium text-sm"
+          style={{ backgroundColor: '#e8e0d0', color: '#0a0e14' }}
+        >
+          Continue with Google
+        </button>
+
+        <div className="flex items-center gap-3 text-xs" style={{ color: '#6b7280' }}>
+          <span className="flex-1 h-px" style={{ backgroundColor: '#1a2235' }} />
+          or email
+          <span className="flex-1 h-px" style={{ backgroundColor: '#1a2235' }} />
+        </div>
+
         <input
           type="email"
           required
-          placeholder="you@university.edu"
+          placeholder="you@ucsc.edu"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full px-3 py-2 rounded-lg bg-transparent"

@@ -16,6 +16,7 @@ type ButterbaseContextValue = {
   loading: boolean
   signIn: (email: string, password: string) => Promise<{ error?: string }>
   signUp: (email: string, password: string) => Promise<{ error?: string }>
+  signInWithGoogle: () => Promise<{ error?: string }>
   signOut: () => Promise<void>
 }
 
@@ -26,6 +27,7 @@ const ButterbaseContext = createContext<ButterbaseContextValue>({
   loading: false,
   signIn: async () => ({ error: 'Butterbase not configured' }),
   signUp: async () => ({ error: 'Butterbase not configured' }),
+  signInWithGoogle: async () => ({ error: 'Butterbase not configured' }),
   signOut: async () => {},
 })
 
@@ -44,6 +46,11 @@ function asAuthUser(value: unknown): AuthUser | null {
   }
 }
 
+function oauthCallbackUrl() {
+  if (typeof window === 'undefined') return ''
+  return `${window.location.origin}/auth/callback`
+}
+
 export default function ButterbaseProvider({ children }: { children: ReactNode }) {
   const configured = isButterbaseConfigured()
   const client = useMemo(() => (configured ? getButterbase() : null), [configured])
@@ -60,6 +67,17 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
 
     const boot = async () => {
       try {
+        // Finish OAuth if we landed with tokens (also handled on /auth/callback)
+        if (typeof window !== 'undefined') {
+          const q = window.location.search
+          if (q.includes('access_token') || q.includes('code=')) {
+            const { data, error } = await client.auth.handleOAuthCallback()
+            if (!error && data?.user) {
+              setUser(asAuthUser(data.user))
+            }
+          }
+        }
+
         const session = client.sessionManager.getSession()
         const sessionUser = asAuthUser(session && 'user' in session ? session.user : null)
         if (sessionUser) setUser(sessionUser)
@@ -74,7 +92,9 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
       }
 
       const { unsubscribe } = client.onAuthStateChange((_event, session) => {
-        const next = asAuthUser(session && typeof session === 'object' && 'user' in session ? session.user : null)
+        const next = asAuthUser(
+          session && typeof session === 'object' && 'user' in session ? session.user : null
+        )
         setUser(next)
       })
       unsub = unsubscribe
@@ -98,6 +118,25 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
       if (!client) return { error: 'Butterbase not configured' }
       const { error } = await client.auth.signUp({ email, password })
       return { error: error ? String(error) : undefined }
+    },
+    signInWithGoogle: async () => {
+      if (!client) return { error: 'Butterbase not configured' }
+      try {
+        const { url } = client.auth.signInWithOAuth({
+          provider: 'google',
+          redirectTo: oauthCallbackUrl(),
+        })
+        if (!url) return { error: 'Google OAuth URL missing — configure provider in Butterbase' }
+        window.location.href = url
+        return {}
+      } catch (e) {
+        return {
+          error:
+            e instanceof Error
+              ? e.message
+              : 'Google OAuth failed — add Google client ID/secret in Butterbase',
+        }
+      }
     },
     signOut: async () => {
       if (!client) return

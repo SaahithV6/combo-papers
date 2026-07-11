@@ -291,6 +291,39 @@ export default function ThreadPage() {
             </ol>
           </section>
         )}
+
+        <section>
+          <h2 className="text-lg mb-3" style={{ color: '#e8e0d0', fontFamily: 'Syne, sans-serif' }}>
+            Timeline · what changed
+          </h2>
+          <div className="space-y-3">
+            {[...experience.papers]
+              .sort((a, b) => (a.year || 0) - (b.year || 0))
+              .map((paper, i, arr) => {
+                const prev = i > 0 ? arr[i - 1] : null
+                return (
+                  <div
+                    key={paper.id || paper.title}
+                    className="p-4 rounded-xl"
+                    style={{ backgroundColor: '#111827', border: '1px solid #1a2235' }}
+                  >
+                    <p className="text-xs mb-1" style={{ color: '#00d4aa' }}>
+                      {paper.year || 'n.d.'} · {paper.venue || 'venue unknown'}
+                    </p>
+                    <p className="text-sm" style={{ color: '#e8e0d0' }}>
+                      {paper.title}
+                    </p>
+                    {prev && (
+                      <p className="text-xs mt-2" style={{ color: '#9ca3af' }}>
+                        After “{prev.title.slice(0, 48)}…” — compare claims in the conflict panel, or open both
+                        Living Pages and watch amber “seen before” underlines on shared notation.
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+          </div>
+        </section>
       </div>
     </div>
   )

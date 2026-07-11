@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useButterbaseAuth } from '@/components/ButterbaseProvider'
 
 export default function SignInPage() {
-  const { signIn, configured } = useButterbaseAuth()
+  const { signIn, signInWithGoogle, configured } = useButterbaseAuth()
   const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -25,6 +25,12 @@ export default function SignInPage() {
     router.push('/')
   }
 
+  const onGoogle = async () => {
+    setError(null)
+    const result = await signInWithGoogle()
+    if (result.error) setError(result.error)
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-6" style={{ backgroundColor: '#0a0e14' }}>
       <form
@@ -36,17 +42,35 @@ export default function SignInPage() {
           Sign in
         </h1>
         <p className="text-sm" style={{ color: '#9ca3af' }}>
-          Use your institutional email to unlock journal access for the learning agent.
+          Prefer Google for a seamless handoff to Colab. Use your UCSC Google account when possible
+          for institutional library context.
         </p>
         {!configured && (
           <p className="text-sm" style={{ color: '#f5a623' }}>
             Butterbase is not configured yet. Demo mode still works from the home page.
           </p>
         )}
+
+        <button
+          type="button"
+          onClick={() => void onGoogle()}
+          disabled={!configured}
+          className="w-full py-2.5 rounded-lg font-medium text-sm"
+          style={{ backgroundColor: '#e8e0d0', color: '#0a0e14' }}
+        >
+          Continue with Google
+        </button>
+
+        <div className="flex items-center gap-3 text-xs" style={{ color: '#6b7280' }}>
+          <span className="flex-1 h-px" style={{ backgroundColor: '#1a2235' }} />
+          or email
+          <span className="flex-1 h-px" style={{ backgroundColor: '#1a2235' }} />
+        </div>
+
         <input
           type="email"
           required
-          placeholder="you@university.edu"
+          placeholder="you@ucsc.edu"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="w-full px-3 py-2 rounded-lg bg-transparent"
@@ -68,7 +92,7 @@ export default function SignInPage() {
           className="w-full py-2.5 rounded-lg font-medium"
           style={{ backgroundColor: '#00d4aa', color: '#0a0e14' }}
         >
-          {loading ? 'Signing in…' : 'Sign in'}
+          {loading ? 'Signing in…' : 'Sign in with email'}
         </button>
         <button
           type="button"

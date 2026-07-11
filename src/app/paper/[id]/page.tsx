@@ -13,6 +13,7 @@ import RabbitHolePanel from '@/components/RabbitHole/RabbitHolePanel'
 import GlossarySidebar from '@/components/Glossary/GlossarySidebar'
 import KeyboardShortcuts from '@/components/Navigation/KeyboardShortcuts'
 import ConceptMap from '@/components/ConceptMap/ConceptMap'
+import SpacedReExposureStrip from '@/components/LivingPage/SpacedReExposureStrip'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useDepthMeter } from '@/hooks/useDepthMeter'
 import { useRabbitHole } from '@/hooks/useRabbitHole'
@@ -47,6 +48,7 @@ export default function PaperPage() {
   const [discoveredArticles, setDiscoveredArticles] = useState<DiscoveredArticle[]>([])
   const [articleAnalysis, setArticleAnalysis] = useState<ArticleAnalysis | null>(null)
   const [conceptMapNodes, setConceptMapNodes] = useState<ConceptMapNode[]>([])
+  const [seenBeforeSymbols, setSeenBeforeSymbols] = useState<Set<string>>(new Set())
   const [pdfFileId, setPdfFileId] = useState<string | null>(null)
   const [pdfStatus, setPdfStatus] = useState<'idle' | 'generating' | 'success' | 'error'>('idle')
   const [pdfStatusMsg, setPdfStatusMsg] = useState('')
@@ -147,6 +149,23 @@ export default function PaperPage() {
       })),
     ]
     setConceptMapNodes(nodes)
+  }, [paper])
+
+  // Cross-paper concept threading: amber underline for symbols seen earlier in the session
+  useEffect(() => {
+    if (!paper) return
+    try {
+      const raw = sessionStorage.getItem('session:seenSymbols')
+      const prior = raw ? (JSON.parse(raw) as string[]) : []
+      const current = (paper.variables || []).map((v) => v.symbol)
+      setSeenBeforeSymbols(new Set(prior.filter((s) => current.includes(s))))
+      sessionStorage.setItem(
+        'session:seenSymbols',
+        JSON.stringify(Array.from(new Set([...prior, ...current])))
+      )
+    } catch {
+      setSeenBeforeSymbols(new Set())
+    }
   }, [paper])
 
   const sections = paper?.sections || []
@@ -451,6 +470,7 @@ export default function PaperPage() {
           paper={paper}
           readingMode={readingMode}
           onReadingModeChange={setReadingMode}
+          readersOnline={paper.readersOnline ?? 2 + ((paper.title?.length || 0) % 4)}
         />
 
         {/* Toolbar */}
@@ -530,8 +550,62 @@ export default function PaperPage() {
             evidenceChains={i === visibleSections.length - 1 ? paper.evidenceChains : []}
             notebookCells={(paper.notebookCells || []).filter(c => c.sectionId === section.id)}
             onOpenNotebook={() => setShowNotebook(true)}
+            notationWarnings={paper.notationWarnings || []}
+            showCheckpoint={readingMode !== 'skim' && (i === 1 || i === Math.floor(visibleSections.length / 2))}
+            onCheckpoint={(response) => {
+              recordAction('hoveredVariable')
+              void fetch('/api/agent/adapt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  eventType: response.length < 12 ? 'checkpoint_fail' : 'checkpoint_pass',
+                  concept: section.title,
+                  paperTitle: paper.title,
+                  userId: 'anonymous',
+                }),
+              }).catch(() => {})
+            }}
+            seenBeforeSymbols={seenBeforeSymbols}
           />
         ))}
+
+        {/* One-more transition — next paper in thread */}
+        {(() => {
+          try {
+            const threadKeys = Object.keys(sessionStorage).filter((k) => k.startsWith('thread:'))
+            for (const key of threadKeys) {
+              const exp = JSON.parse(sessionStorage.getItem(key) || 'null') as {
+                papers?: Array<{ id?: string; title: string; relevanceReason?: string }>
+              } | null
+              if (!exp?.papers) continue
+              const idx = exp.papers.findIndex((p) => p.id === paper.id)
+              const next = idx >= 0 ? exp.papers[idx + 1] : null
+              if (!next?.id) continue
+              return (
+                <div
+                  className="mt-16 mb-8 p-5 rounded-xl cursor-pointer"
+                  style={{ backgroundColor: '#111827', border: '1px solid #00d4aa33' }}
+                  onClick={() => router.push(`/paper/${encodeURIComponent(next.id!)}`)}
+                >
+                  <p className="text-xs uppercase tracking-wide mb-1" style={{ color: '#00d4aa' }}>
+                    Continue the path
+                  </p>
+                  <p className="text-sm font-medium" style={{ color: '#e8e0d0' }}>
+                    {next.title}
+                  </p>
+                  {next.relevanceReason && (
+                    <p className="text-xs mt-1" style={{ color: '#9ca3af' }}>
+                      {next.relevanceReason}
+                    </p>
+                  )}
+                </div>
+              )
+            }
+          } catch {
+            /* ignore */
+          }
+          return null
+        })()}
 
         {/* Discover Related Papers results */}
         {(discoveredArticles.length > 0 || articleAnalysis) && (
@@ -702,6 +776,14 @@ export default function PaperPage() {
 
       {/* Depth Meter */}
       <DepthMeter depth={depth} />
+
+      <SpacedReExposureStrip
+        terms={(paper.variables || []).slice(0, 8).map((v) => ({
+          term: v.symbol,
+          definition: v.definition || v.name,
+          section: v.firstSeenSectionId || 'earlier',
+        }))}
+      />
     </div>
   )
 }
