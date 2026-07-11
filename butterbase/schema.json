@@ -1,0 +1,149 @@
+{
+  "tables": {
+    "learners": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "user_id": { "type": "text", "unique": true, "nullable": false },
+        "email": { "type": "text", "nullable": true },
+        "institution_domain": { "type": "text", "nullable": true },
+        "display_name": { "type": "text", "nullable": true },
+        "goals": { "type": "jsonb", "nullable": true },
+        "known_concepts": { "type": "jsonb", "nullable": true },
+        "gap_concepts": { "type": "jsonb", "nullable": true },
+        "preferences": { "type": "jsonb", "nullable": true },
+        "everos_user_id": { "type": "text", "nullable": true },
+        "created_at": { "type": "timestamptz", "default": "now()" },
+        "updated_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "learners_user_id_idx": { "columns": ["user_id"] },
+        "learners_institution_idx": { "columns": ["institution_domain"] }
+      }
+    },
+    "learning_threads": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "user_id": { "type": "text", "nullable": false },
+        "query": { "type": "text", "nullable": false },
+        "title": { "type": "text", "nullable": false },
+        "status": { "type": "text", "nullable": false, "default": "'planning'" },
+        "plan": { "type": "jsonb", "nullable": true },
+        "concept_map": { "type": "jsonb", "nullable": true },
+        "paper_ids": { "type": "jsonb", "nullable": true },
+        "created_at": { "type": "timestamptz", "default": "now()" },
+        "updated_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "threads_user_idx": { "columns": ["user_id"] },
+        "threads_status_idx": { "columns": ["status"] }
+      }
+    },
+    "papers": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "thread_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "learning_threads", "column": "id", "onDelete": "SET NULL" }
+        },
+        "external_id": { "type": "text", "nullable": false },
+        "arxiv_id": { "type": "text", "nullable": true },
+        "doi": { "type": "text", "nullable": true },
+        "title": { "type": "text", "nullable": false },
+        "authors": { "type": "jsonb", "nullable": false },
+        "venue": { "type": "text", "nullable": true },
+        "year": { "type": "integer", "nullable": true },
+        "pdf_url": { "type": "text", "nullable": false },
+        "source_url": { "type": "text", "nullable": false },
+        "source_name": { "type": "text", "nullable": false },
+        "access_tier": { "type": "text", "nullable": false, "default": "'open'" },
+        "relevance_score": { "type": "real", "nullable": false, "default": "0" },
+        "relevance_reason": { "type": "text", "nullable": true },
+        "status": { "type": "text", "nullable": false, "default": "'queued'" },
+        "processed": { "type": "jsonb", "nullable": true },
+        "github_url": { "type": "text", "nullable": true },
+        "notebook_cells": { "type": "jsonb", "nullable": true },
+        "created_at": { "type": "timestamptz", "default": "now()" },
+        "updated_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "papers_thread_idx": { "columns": ["thread_id"] },
+        "papers_external_idx": { "columns": ["external_id"] },
+        "papers_doi_idx": { "columns": ["doi"] },
+        "papers_status_idx": { "columns": ["status"] }
+      }
+    },
+    "agent_jobs": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "paper_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "papers", "column": "id", "onDelete": "SET NULL" }
+        },
+        "thread_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "learning_threads", "column": "id", "onDelete": "SET NULL" }
+        },
+        "user_id": { "type": "text", "nullable": false },
+        "kind": { "type": "text", "nullable": false },
+        "stage": { "type": "text", "nullable": false },
+        "status": { "type": "text", "nullable": false, "default": "'running'" },
+        "payload": { "type": "jsonb", "nullable": true },
+        "error": { "type": "text", "nullable": true },
+        "updated_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "jobs_user_idx": { "columns": ["user_id"] },
+        "jobs_paper_idx": { "columns": ["paper_id"] },
+        "jobs_thread_idx": { "columns": ["thread_id"] },
+        "jobs_status_idx": { "columns": ["status"] }
+      }
+    },
+    "learning_events": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "user_id": { "type": "text", "nullable": false },
+        "thread_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "learning_threads", "column": "id", "onDelete": "SET NULL" }
+        },
+        "paper_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "papers", "column": "id", "onDelete": "SET NULL" }
+        },
+        "event_type": { "type": "text", "nullable": false },
+        "concept": { "type": "text", "nullable": true },
+        "payload": { "type": "jsonb", "nullable": true },
+        "created_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "events_user_idx": { "columns": ["user_id"] },
+        "events_type_idx": { "columns": ["event_type"] },
+        "events_concept_idx": { "columns": ["concept"] }
+      }
+    },
+    "saved_papers": {
+      "columns": {
+        "id": { "type": "uuid", "primaryKey": true, "default": "gen_random_uuid()" },
+        "user_id": { "type": "text", "nullable": false },
+        "paper_id": {
+          "type": "uuid",
+          "nullable": true,
+          "references": { "table": "papers", "column": "id", "onDelete": "SET NULL" }
+        },
+        "external_id": { "type": "text", "nullable": false },
+        "title": { "type": "text", "nullable": false },
+        "snapshot_object_id": { "type": "text", "nullable": true },
+        "created_at": { "type": "timestamptz", "default": "now()" }
+      },
+      "indexes": {
+        "saved_user_idx": { "columns": ["user_id"] },
+        "saved_external_idx": { "columns": ["external_id"] }
+      }
+    }
+  }
+}
