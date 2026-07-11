@@ -20,6 +20,7 @@ import { useDepthMeter } from '@/hooks/useDepthMeter'
 import { useRabbitHole } from '@/hooks/useRabbitHole'
 import demoData from '@/data/demo-fallback.json'
 import { useButterbaseAuth } from '@/components/ButterbaseProvider'
+import { useLearnerId } from '@/hooks/useLearnerId'
 import type { ArticleAnalysis } from '@/app/api/analyze-articles/route'
 import type { DiscoveredArticle } from '@/app/api/browser-use/route'
 import { safeEncodeId } from '@/lib/urlUtils'
@@ -34,6 +35,7 @@ export default function PaperPage() {
   const params = useParams()
   const router = useRouter()
   const { user, signOut } = useButterbaseAuth()
+  const { userId: learnerUserId, email: learnerEmail } = useLearnerId()
   const [paper, setPaper] = useState<ProcessedPaper | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [readingMode, setReadingMode] = useState<ReadingMode>('read')
@@ -570,11 +572,16 @@ export default function PaperPage() {
                   eventType: response.length < 12 ? 'checkpoint_fail' : 'checkpoint_pass',
                   concept: section.title,
                   paperTitle: paper.title,
-                  userId: 'anonymous',
+                  paperId: paper.id,
+                  userId: learnerUserId,
+                  email: learnerEmail,
                 }),
               }).catch(() => {})
             }}
             seenBeforeSymbols={seenBeforeSymbols}
+            learnerUserId={learnerUserId}
+            learnerEmail={learnerEmail}
+            paperId={paper.id}
           />
         ))}
 

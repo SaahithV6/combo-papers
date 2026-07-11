@@ -4,8 +4,9 @@
 
 1. **Client is a rendering shell** — secrets, PDF fetch, Claude, EverOS, and institutional proxying stay server-side.
 2. **Search is a learning plan** — `/api/agent/search` returns papers *and* a mentor curriculum.
-3. **Struggle is a signal** — "I don't understand" and checkpoints call `/api/agent/adapt`, which writes EverOS memory and revises the path.
+3. **Struggle is a signal** — "I don't understand" and checkpoints call `/api/agent/adapt`, which writes EverOS memory, updates Butterbase `learners` gaps/knowns, and revises the path.
 4. **Butterbase is the backend** — replaces Convex + Vercel for data, auth, and submission/deploy.
+5. **Identity is stable** — signed-in Butterbase `user.id`, or a `guest_*` local id; both key EverOS + `learners.user_id`.
 
 ---
 
@@ -34,7 +35,13 @@ Learner (institutional email)
     │  /api/agent/adapt                             │
     │    ├── mentorAdapt()                          │
     │    ├── EverOS learner events                  │
+    │    ├── Butterbase learners gap/known update   │
     │    └── Butterbase learning_events             │
+    │                                               │
+    │  /api/learner                                 │
+    │    ├── ensure / patch learners row            │
+    │    ├── EverOS memory search                   │
+    │    └── list learning_threads for user         │
     │                                               │
     │  /api/process · /api/prerequisite · /api/notebook │
     └───────────────────────────────────────────────┘

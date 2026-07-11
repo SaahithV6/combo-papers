@@ -30,11 +30,11 @@ Status vs original [YCBU README](https://github.com/SaahithV6/YCBU-3-2026) / Liv
 | Social presence (“N others reading”) | **Wired** (ambient) |
 | One-more next paper transition | **Wired** |
 | Save & share experiences | Done (`/thread/[id]`) |
+| Per-user memory (Butterbase + EverOS) | **Done** — `learners` profile, gaps/knowns, EverOS episodes, Memory panel |
 | Google OAuth | **UI + callback ready** — needs Google client ID/secret in Butterbase |
 | OpenAthens / UCSC library books+articles | Done (click-through) |
 | Side-by-side figure compare across papers | Not yet |
-| Ambient audio | Skipped (optional, off by default in design) |
-| Daytona full sandbox | Optional / keys revoked |
+| Daytona full sandbox | Dropped for demo — not required |
 
 ## What you still paste
 

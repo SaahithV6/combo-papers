@@ -5,6 +5,9 @@ import { useState } from 'react'
 interface DontUnderstandButtonProps {
   paragraph: string
   paperTitle: string
+  userId?: string
+  email?: string
+  paperId?: string
 }
 
 interface PrerequisiteResult {
@@ -15,7 +18,13 @@ interface PrerequisiteResult {
   paperUrl?: string
 }
 
-export default function DontUnderstandButton({ paragraph, paperTitle }: DontUnderstandButtonProps) {
+export default function DontUnderstandButton({
+  paragraph,
+  paperTitle,
+  userId = 'anonymous',
+  email,
+  paperId,
+}: DontUnderstandButtonProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<PrerequisiteResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -38,14 +47,16 @@ export default function DontUnderstandButton({ paragraph, paperTitle }: DontUnde
       setResult(data)
 
       // Feed the lifelong mentor so the plan adapts across sessions
-          void fetch('/api/agent/adapt', {
+      void fetch('/api/agent/adapt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventType: 'dont_understand',
           concept: data.concept,
           paperTitle,
-          userId: 'anonymous',
+          paperId,
+          userId,
+          email,
         }),
       }).catch(() => {})
       try {

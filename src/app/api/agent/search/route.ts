@@ -13,6 +13,7 @@ import {
   resolveJournalAccess,
 } from '@/lib/institutional'
 import { getButterbaseAdmin } from '@/lib/butterbase'
+import { ensureLearner, getLearnerRow, rowToProfile } from '@/lib/learner'
 import demoData from '@/data/demo-fallback.json'
 
 export const runtime = 'nodejs'
@@ -60,6 +61,17 @@ export async function POST(request: NextRequest) {
     }
 
     const institutional = parseInstitutionalEmail(email)
+
+    // Load durable learner profile (Butterbase) → feed plan + EverOS
+    await ensureLearner({ userId, email: email || undefined })
+    const stored = await getLearnerRow(userId)
+    const storedProfile = stored ? rowToProfile(stored) : null
+    const mergedKnown = [
+      ...knownConcepts,
+      ...(storedProfile?.knownConcepts || []),
+    ]
+    const mergedGaps = [...gapConcepts, ...(storedProfile?.gapConcepts || [])]
+    const mergedGoals = [...goals, ...(storedProfile?.goals || [])]
 
     const isDemo =
       query.toLowerCase().includes('mechanistic interpretability') ||
@@ -119,13 +131,16 @@ export async function POST(request: NextRequest) {
 
     const profile: LearnerProfile = {
       userId,
-      email: institutional?.email,
-      institutionDomain: institutional?.domain,
-      goals,
-      knownConcepts,
-      gapConcepts,
+      email: institutional?.email || storedProfile?.email,
+      institutionDomain: institutional?.domain || storedProfile?.institutionDomain,
+      goals: [...new Set(mergedGoals)],
+      knownConcepts: [...new Set(mergedKnown)],
+      gapConcepts: [...new Set(mergedGaps)],
       preferences: {
-        preferJournals: Boolean(institutional?.isInstitutional),
+        preferJournals: Boolean(
+          institutional?.isInstitutional || storedProfile?.preferences?.preferJournals
+        ),
+        readingMode: storedProfile?.preferences?.readingMode,
       },
     }
 

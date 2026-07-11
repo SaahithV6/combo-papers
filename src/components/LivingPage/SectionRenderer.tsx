@@ -30,6 +30,9 @@ interface SectionRendererProps {
   checkpointPrompt?: string
   onCheckpoint?: (response: string) => void
   seenBeforeSymbols?: Set<string>
+  learnerUserId?: string
+  learnerEmail?: string
+  paperId?: string
 }
 
 function highlightVariables(
@@ -106,6 +109,9 @@ export default function SectionRenderer({
   checkpointPrompt,
   onCheckpoint,
   seenBeforeSymbols,
+  learnerUserId,
+  learnerEmail,
+  paperId,
 }: SectionRendererProps) {
   const [activeParagraph, setActiveParagraph] = useState<number | null>(null)
   const sectionWarnings = notationWarnings.filter(
@@ -152,7 +158,13 @@ export default function SectionRenderer({
                 {highlightVariables(block.raw, variables, onVariableHover, seenBeforeSymbols)}
               </p>
               <div className={`mt-1 transition-opacity duration-200 ${activeParagraph === i ? 'opacity-100' : 'opacity-0'}`}>
-                <DontUnderstandButton paragraph={block.raw} paperTitle={paperTitle} />
+                <DontUnderstandButton
+                  paragraph={block.raw}
+                  paperTitle={paperTitle}
+                  userId={learnerUserId}
+                  email={learnerEmail}
+                  paperId={paperId}
+                />
               </div>
             </div>
           )}

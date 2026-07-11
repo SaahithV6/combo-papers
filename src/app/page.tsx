@@ -6,6 +6,8 @@ import SearchInput from '@/components/Search/SearchInput'
 import PaperList from '@/components/Search/PaperList'
 import { PaperMetadata, ProcessedPaper } from '@/lib/types'
 import { useButterbaseAuth } from '@/components/ButterbaseProvider'
+import { useLearnerId } from '@/hooks/useLearnerId'
+import LearnerMemoryPanel from '@/components/Learner/LearnerMemoryPanel'
 import type { MentorTurn } from '@/lib/agent/types'
 
 type SearchStatus = 'idle' | 'searching' | 'results' | 'processing'
@@ -17,6 +19,7 @@ interface ProcessingState {
 export default function HomePage() {
   const router = useRouter()
   const { user, configured, signOut } = useButterbaseAuth()
+  const { userId: learnerUserId, email: learnerEmail, ready: learnerReady } = useLearnerId()
   const [status, setStatus] = useState<SearchStatus>('idle')
   const [papers, setPapers] = useState<PaperMetadata[]>([])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -44,8 +47,8 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           query,
-          userId: user?.id || 'anonymous',
-          email: (user?.email as string | undefined) || 'sarveera@ucsc.edu',
+          userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
+          email: learnerEmail || (user?.email as string | undefined) || 'sarveera@ucsc.edu',
         }),
       })
 
@@ -136,7 +139,7 @@ export default function HomePage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             query,
-            userId: user?.id || 'anonymous',
+            userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
             papers: ready.map((p) => ({
               id: p.id,
               title: p.title,
@@ -165,7 +168,7 @@ export default function HomePage() {
           conflicts,
           plan: mentor?.plan || null,
           library,
-          userId: user?.id || user?.email || 'anonymous',
+          userId: learnerReady ? learnerUserId : user?.id || user?.email || 'anonymous',
         }),
       })
 
@@ -289,6 +292,7 @@ export default function HomePage() {
 
         <div className="mb-12">
           <SearchInput onSearch={handleSearch} isLoading={status === 'searching'} />
+          <LearnerMemoryPanel />
         </div>
 
         {status === 'searching' && (

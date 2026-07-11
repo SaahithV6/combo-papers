@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { mentorAdapt } from '@/lib/agent/mentor'
 import { getButterbaseAdmin } from '@/lib/butterbase'
+import { applyLearningSignal, ensureLearner, rowToProfile } from '@/lib/learner'
 
 export const runtime = 'nodejs'
 
@@ -19,11 +20,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'eventType is required' }, { status: 400 })
     }
 
+    await ensureLearner({
+      userId,
+      email: typeof body.email === 'string' ? body.email : undefined,
+    })
+
     const turn = await mentorAdapt({
       userId,
       eventType,
       concept: body.concept,
       paperTitle: body.paperTitle,
+    })
+
+    const learner = await applyLearningSignal({
+      userId,
+      eventType,
+      concept: body.concept,
     })
 
     const admin = getButterbaseAdmin()
@@ -42,7 +54,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ turn })
+    return NextResponse.json({
+      turn,
+      profile: learner ? rowToProfile(learner) : null,
+    })
   } catch (error) {
     console.error('Agent adapt error:', error)
     return NextResponse.json(

@@ -84,7 +84,14 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
 
         const { data } = await client.auth.getUser()
         const next = asAuthUser(data)
-        if (next) setUser(next)
+        if (next) {
+          setUser(next)
+          void fetch('/api/learner', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: next.id, email: next.email }),
+          }).catch(() => {})
+        }
       } catch {
         // Demo mode / no session
       } finally {
@@ -96,6 +103,13 @@ export default function ButterbaseProvider({ children }: { children: ReactNode }
           session && typeof session === 'object' && 'user' in session ? session.user : null
         )
         setUser(next)
+        if (next?.id) {
+          void fetch('/api/learner', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: next.id, email: next.email }),
+          }).catch(() => {})
+        }
       })
       unsub = unsubscribe
     }

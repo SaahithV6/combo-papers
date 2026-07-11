@@ -54,6 +54,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Episodic memory for this learner
+    try {
+      const { rememberLearnerEvent } = await import('@/lib/everos')
+      await rememberLearnerEvent({
+        userId,
+        content: `Saved experience "${title}" for query "${query}" with ${papers.length} papers.`,
+      })
+    } catch {
+      /* ignore */
+    }
+
     return NextResponse.json({ id, experience, sharePath: `/thread/${id}` })
   } catch (error) {
     return NextResponse.json(
@@ -65,13 +76,32 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   const id = request.nextUrl.searchParams.get('id')
-  if (!id) {
-    return NextResponse.json({ error: 'id required' }, { status: 400 })
-  }
+  const userId = request.nextUrl.searchParams.get('userId')
 
   const admin = getButterbaseAdmin()
   if (!admin) {
-    return NextResponse.json({ error: 'Butterbase not configured', id }, { status: 404 })
+    return NextResponse.json({ error: 'Butterbase not configured' }, { status: 404 })
+  }
+
+  // List experiences for a learner
+  if (userId && !id) {
+    try {
+      const { data, error } = await admin
+        .from('learning_threads')
+        .select('id,title,query,status,created_at,updated_at')
+        .eq('user_id', userId)
+        .limit(20)
+      if (error) throw error
+      const rows = Array.isArray(data) ? data : data ? [data] : []
+      return NextResponse.json({ experiences: rows })
+    } catch (e) {
+      console.error('Experience list failed:', e)
+      return NextResponse.json({ error: 'Lookup failed' }, { status: 500 })
+    }
+  }
+
+  if (!id) {
+    return NextResponse.json({ error: 'id or userId required' }, { status: 400 })
   }
 
   try {
@@ -91,6 +121,7 @@ export async function GET(request: NextRequest) {
         conflicts: plan.conflicts || null,
         plan,
         library: plan.library || null,
+        userId: (row as { user_id?: string }).user_id,
       },
     })
   } catch (e) {
