@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react'
 import { ProcessedPaper, NotebookCell as NotebookCellType } from '@/lib/types'
 import NotebookCell from './NotebookCell'
+import { openInColab, downloadIpynb } from '@/lib/notebookExport'
+import { playAction } from '@/hooks/useSoundscape'
 
 interface NotebookEmbedProps {
   paper: ProcessedPaper
@@ -22,12 +24,12 @@ interface NotebookData {
 export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: NotebookEmbedProps) {
   const [notebook, setNotebook] = useState<NotebookData | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [colabTip, setColabTip] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen || notebook) return
 
-    // Use pre-generated notebook cells if they include code cells
-    if (paper.notebookCells && paper.notebookCells.some(c => c.type === 'code')) {
+    if (paper.notebookCells && paper.notebookCells.some((c) => c.type === 'code')) {
       setNotebook({ cells: paper.notebookCells, status: 'cells-only' })
       return
     }
@@ -41,7 +43,7 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
           body: JSON.stringify({ paper, action: 'create' }),
         })
         if (response.ok) {
-          const data = await response.json() as NotebookData
+          const data = (await response.json()) as NotebookData
           setNotebook(data)
         }
       } catch (e) {
@@ -51,19 +53,31 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
       }
     }
 
-    createNotebook()
+    void createNotebook()
   }, [isOpen, paper, notebook])
 
   if (!isOpen) return null
 
+  const handleOpenColab = () => {
+    if (!notebook?.cells?.length) return
+    const { filename } = openInColab(paper.title, notebook.cells)
+    playAction('notebook')
+    setColabTip(
+      `Downloaded ${filename}. In the Colab tab: File → Upload notebook → pick that file. No OAuth required in Combo Papers.`
+    )
+  }
+
   return (
-    <div className="fixed right-0 top-0 h-full z-50 flex flex-col animate-slide-in-right bg-surface border-l border-surface-2 shadow-2xl" style={{ width: '480px' }}>
-      {/* Header */}
+    <div
+      className="fixed right-0 top-0 h-full z-50 flex flex-col animate-slide-in-right bg-surface border-l border-surface-2 shadow-2xl"
+      style={{ width: '480px' }}
+    >
       <div className="flex items-center justify-between px-4 py-3 border-b border-surface-2">
         <div>
           <p className="text-xs font-display uppercase tracking-wider text-teal">Notebook</p>
           <p className="text-xs mt-0.5 text-text-muted" style={{ maxWidth: '300px' }} title={paper.title}>
-            {paper.title.substring(0, 50)}{paper.title.length > 50 ? '...' : ''}
+            {paper.title.substring(0, 50)}
+            {paper.title.length > 50 ? '...' : ''}
           </p>
         </div>
         <button
@@ -74,20 +88,23 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
         </button>
       </div>
 
-      {/* Sandbox iframe (when available) */}
-      {notebook?.sandboxUrl && (
-        <div className="border-b border-surface-2">
-          <iframe
-            src={notebook.sandboxUrl}
-            className="w-full"
-            style={{ height: '200px' }}
-            title="Daytona Sandbox"
-            sandbox="allow-scripts allow-same-origin allow-forms"
-          />
+      {colabTip && (
+        <div
+          className="px-4 py-2 text-xs border-b border-surface-2"
+          style={{ backgroundColor: '#111827', color: '#f5a623' }}
+        >
+          {colabTip}
+          <button
+            type="button"
+            className="ml-2 underline"
+            style={{ color: '#00d4aa' }}
+            onClick={() => setColabTip(null)}
+          >
+            dismiss
+          </button>
         </div>
       )}
 
-      {/* Body */}
       <div className="flex-1 overflow-y-auto">
         {isLoading && (
           <div className="flex items-center justify-center h-32">
@@ -101,8 +118,7 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
         {!isLoading && notebook && (
           <div>
             {notebook.cells.map((cell) => {
-              // Find which section this cell belongs to for cross-reference badge
-              const section = (paper.sections || []).find(s => s.id === cell.sectionId)
+              const section = (paper.sections || []).find((s) => s.id === cell.sectionId)
               return (
                 <div key={cell.id} id={`nb-cell-${cell.id}`}>
                   {section && (
@@ -118,8 +134,10 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
                   )}
                   <NotebookCell
                     cell={cell}
-                    workspaceId={notebook.daytonaWorkspaceId}
-                    onRun={() => onCellRun?.()}
+                    onRun={() => {
+                      playAction('notebook')
+                      onCellRun?.()
+                    }}
                   />
                 </div>
               )
@@ -134,54 +152,36 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
         )}
       </div>
 
-      {/* Footer */}
-      <div className="px-4 py-2 text-xs border-t border-surface-2 text-text-muted flex items-center justify-between gap-2 flex-wrap">
-        <span className="text-teal">⚡ In-page Pyodide · numpy/matplotlib base set</span>
-        <div className="flex gap-3">
+      <div className="px-4 py-3 text-xs border-t border-surface-2 text-text-muted space-y-2">
+        <p style={{ color: '#00d4aa' }}>
+          ⚡ Primary runtime: in-page Pyodide (numpy / matplotlib / scipy / pandas / sklearn)
+        </p>
+        <div className="flex gap-3 flex-wrap">
           {notebook?.cells && (
             <button
               type="button"
-              className="text-teal underline"
-              onClick={() => {
-                const nb = {
-                  nbformat: 4,
-                  nbformat_minor: 5,
-                  metadata: {
-                    kernelspec: { name: 'python3', display_name: 'Python 3' },
-                    language_info: { name: 'python' },
-                  },
-                  cells: notebook.cells.map((c) => ({
-                    cell_type: c.type === 'code' ? 'code' : 'markdown',
-                    metadata: {},
-                    source: c.content.split('\n').map((line, i, arr) =>
-                      i < arr.length - 1 ? `${line}\n` : line
-                    ),
-                    ...(c.type === 'code' ? { outputs: [], execution_count: null } : {}),
-                  })),
-                }
-                const blob = new Blob([JSON.stringify(nb, null, 2)], {
-                  type: 'application/json',
-                })
-                const a = document.createElement('a')
-                a.href = URL.createObjectURL(blob)
-                a.download = `${(paper.title || 'notebook').slice(0, 40).replace(/\W+/g, '_')}.ipynb`
-                a.click()
-              }}
+              className="underline"
+              style={{ color: '#00d4aa' }}
+              onClick={() => downloadIpynb(paper.title, notebook.cells)}
             >
               Download .ipynb
             </button>
           )}
-          {notebook?.colabUrl && (
-            <a href={notebook.colabUrl} target="_blank" rel="noopener noreferrer" className="text-amber">
-              Open Colab ↗
-            </a>
-          )}
-          {notebook?.sandboxUrl && (
-            <a href={notebook.sandboxUrl} target="_blank" rel="noopener noreferrer" className="text-teal">
-              Daytona ↗
-            </a>
+          {notebook?.cells && (
+            <button
+              type="button"
+              className="underline font-medium"
+              style={{ color: '#f5a623' }}
+              onClick={handleOpenColab}
+            >
+              Open in Colab ↗
+            </button>
           )}
         </div>
+        <p style={{ color: '#6b7280' }}>
+          Colab can&apos;t be embedded. Open in Colab downloads the notebook and opens a blank Colab —
+          then File → Upload notebook. No Google OAuth setup required for that path.
+        </p>
       </div>
     </div>
   )

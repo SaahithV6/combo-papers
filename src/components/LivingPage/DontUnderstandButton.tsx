@@ -38,7 +38,7 @@ export default function DontUnderstandButton({ paragraph, paperTitle }: DontUnde
       setResult(data)
 
       // Feed the lifelong mentor so the plan adapts across sessions
-      void fetch('/api/agent/adapt', {
+          void fetch('/api/agent/adapt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -48,6 +48,12 @@ export default function DontUnderstandButton({ paragraph, paperTitle }: DontUnde
           userId: 'anonymous',
         }),
       }).catch(() => {})
+      try {
+        const { playAction } = await import('@/hooks/useSoundscape')
+        playAction('dont_understand')
+      } catch {
+        /* ignore */
+      }
     } catch {
       setError('Could not identify prerequisite. Try again.')
     } finally {

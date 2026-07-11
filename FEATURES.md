@@ -16,7 +16,9 @@ Status vs original [YCBU README](https://github.com/SaahithV6/YCBU-3-2026) / Liv
 | Evidence chains | Done (deep-dive) |
 | Citation graph + foundational/recent filter | Done |
 | Rabbit hole stack/panel | Done |
-| Live notebooks in-page | Done (Pyodide fixed + .ipynb/Colab) |
+| Live notebooks in-page | Done (Pyodide primary; Colab via download+upload, no OAuth) |
+| Ambient audio + action chimes | Done (Sound toggle on Living Page; Web Audio) |
+| Daytona full sandbox | Dropped for demo — not required |
 | Depth meter | Done |
 | Spaced re-exposure strip | **Wired** |
 | Did you follow that? checkpoints | **Wired** |
