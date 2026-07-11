@@ -56,7 +56,65 @@ export default function HomePage() {
     [processingStatus]
   )
 
-  const handleSearch = async (query: string) => {
+  const handleAutoBuildPath = async (query: string, providedPapers?: PaperMetadata[]) => {
+    setStatus('processing')
+    setError(null)
+    setLastQuery(query)
+    setProcessingStatus({})
+
+    try {
+      const response = await fetch('/api/agent/build-path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({
+          query,
+          papers: providedPapers,
+          maxPapers: 4,
+          userId: learnerReady ? learnerUserId : user?.id || 'anonymous',
+          email: learnerEmail || (user?.email as string | undefined),
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        if (Array.isArray(data.papers) && data.papers.length) {
+          setPapers(data.papers)
+          setMentor(data.mentor || null)
+          setLibrary(data.library || null)
+          setSearchSource(data.source || 'hybrid')
+          setSelectedIds(
+            data.papers
+              .slice(0, 5)
+              .map((paper: PaperMetadata) => paper.id)
+              .filter(Boolean)
+          )
+          setStatus('results')
+        } else {
+          setStatus('idle')
+        }
+        throw new Error(data.error || 'Automatic path build failed')
+      }
+
+      const experience = data.experience
+      if (experience?.id) {
+        for (const paper of experience.papers || []) {
+          if (paper.id) sessionStorage.setItem(`paper:${paper.id}`, JSON.stringify(paper))
+        }
+        sessionStorage.setItem(`thread:${experience.id}`, JSON.stringify(experience))
+        router.push(`/thread/${encodeURIComponent(experience.id)}`)
+        return
+      }
+      throw new Error('Path was built but no thread id was returned')
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : 'Automatic path build failed. You can still pick papers manually.'
+      )
+      setStatus((current) => (current === 'processing' && papers.length === 0 ? 'idle' : current === 'processing' ? 'results' : current))
+    }
+  }
+
+  const handleBrowseOnly = async (query: string) => {
     setStatus('searching')
     setError(null)
     setPapers([])
@@ -96,6 +154,10 @@ export default function HomePage() {
       setError(reason instanceof Error ? reason.message : 'Search failed. Try the guided demo.')
       setStatus('idle')
     }
+  }
+
+  const handleSearch = async (query: string) => {
+    await handleAutoBuildPath(query)
   }
 
   const handlePaperToggle = (paper: PaperMetadata) => {
@@ -264,11 +326,28 @@ export default function HomePage() {
                     title={configured ? 'Persistence connected' : 'Local demo mode'}
                   />
                 </div>
-                <SearchInput onSearch={handleSearch} isLoading={false} />
+                <SearchInput onSearch={handleSearch} isLoading={isWorking} />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="ui-button ui-button-ghost"
+                    disabled={isWorking}
+                    onClick={() => {
+                      const q = lastQuery || 'attention mechanisms in transformers'
+                      void handleBrowseOnly(q)
+                    }}
+                  >
+                    Browse sources only
+                  </button>
+                </div>
                 <div className="mt-5 border-t pt-4" style={{ borderColor: 'var(--border-subtle)' }}>
                   <button
                     type="button"
-                    onClick={() => void handleSearch('mechanistic interpretability in large language models')}
+                    onClick={() =>
+                      void handleAutoBuildPath(
+                        'mechanistic interpretability in large language models'
+                      )
+                    }
                     className="group flex w-full items-center justify-between gap-4 rounded-lg p-2 text-left transition-colors hover:bg-white/[0.025]"
                   >
                     <span>
@@ -317,13 +396,17 @@ export default function HomePage() {
         {isWorking && (
           <section className="mx-auto max-w-3xl py-16" aria-live="polite">
             <p className="ui-label mb-3" style={{ color: 'var(--teal)' }}>
-              {status === 'searching' ? 'Orienting' : 'Preparing your workspace'}
+              {status === 'searching' ? 'Orienting' : 'Auto-building your Living Path'}
             </p>
             <h1 className="font-display text-3xl font-semibold md:text-4xl">
               {status === 'searching'
                 ? `Mapping “${lastQuery}”`
-                : `Turning ${selectedIds.length} papers into a learning path`}
+                : `Finding fetchable PDFs and turning them into interactive pages`}
             </h1>
+            <p className="mt-3 max-w-2xl text-sm" style={{ color: 'var(--text-muted)' }}>
+              Open / preprint PDFs are processed automatically. Institutional-only items stay queued
+              with OpenAthens links for CruzID unlock.
+            </p>
             <div className="mt-10 space-y-2">
               {PROCESS_STAGES.map((stage, index) => {
                 const activeIndex =
@@ -424,14 +507,29 @@ export default function HomePage() {
                       {selectedIds.length} selected · {searchSource}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    className="ui-button ui-button-primary"
-                    disabled={selectedIds.length === 0}
-                    onClick={() => void handleProcessSelected()}
-                  >
-                    Build path with {selectedIds.length} paper{selectedIds.length === 1 ? '' : 's'} →
-                  </button>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="ui-button ui-button-primary"
+                      disabled={selectedIds.length === 0}
+                      onClick={() =>
+                        void handleAutoBuildPath(
+                          lastQuery || mentor?.plan?.query || 'research topic',
+                          papers.filter((paper) => paper.id && selectedIds.includes(paper.id))
+                        )
+                      }
+                    >
+                      Auto-build Living Path →
+                    </button>
+                    <button
+                      type="button"
+                      className="ui-button"
+                      disabled={selectedIds.length === 0}
+                      onClick={() => void handleProcessSelected()}
+                    >
+                      Process selection
+                    </button>
+                  </div>
                 </div>
 
                 {papers.length > 0 ? (

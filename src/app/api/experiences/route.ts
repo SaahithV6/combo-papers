@@ -193,6 +193,8 @@ export async function GET(request: NextRequest) {
         conflicts: plan.conflicts || null,
         plan,
         library: plan.library || null,
+        institutionalQueue: plan.institutionalQueue || [],
+        accessSummary: plan.accessSummary || null,
         userId: (row as { user_id?: string }).user_id,
       },
     })

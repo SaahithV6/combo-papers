@@ -21,6 +21,18 @@ interface Experience {
     everythingSearchUrl?: string
     note?: string
   } | null
+  institutionalQueue?: Array<{
+    id?: string
+    title: string
+    accessUrl?: string
+    reason?: string
+    sourceName?: string
+  }>
+  accessSummary?: {
+    processed: number
+    institutionalPending: number
+    unavailable: number
+  }
 }
 
 function paperId(paper: ProcessedPaper) {
@@ -294,6 +306,38 @@ export default function ThreadPage() {
                     </a>
                   )}
                 </div>
+              </div>
+            )}
+
+            {(experience.institutionalQueue?.length || 0) > 0 && (
+              <div className="ui-panel p-4">
+                <p className="ui-label" style={{ color: 'var(--amber)' }}>
+                  Needs CruzID unlock
+                </p>
+                <p className="mt-2 text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                  These matched your topic but could not be fetched server-side. Open via OpenAthens,
+                  then we can import the PDF into a Living Page later.
+                </p>
+                <ul className="mt-3 space-y-3">
+                  {experience.institutionalQueue!.slice(0, 6).map((item) => (
+                    <li key={item.id || item.title}>
+                      <p className="text-xs leading-snug" style={{ color: 'var(--text-secondary)' }}>
+                        {item.title}
+                      </p>
+                      {item.accessUrl && (
+                        <a
+                          href={item.accessUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-block text-[11px]"
+                          style={{ color: 'var(--amber)' }}
+                        >
+                          Open with OpenAthens →
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </aside>
