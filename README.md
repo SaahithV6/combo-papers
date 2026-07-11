@@ -5,6 +5,11 @@
 Built for the **TAL × Butterbase × EverMind AI Education Hackathon** (July 2026).  
 Tracks: **Autonomous Learning Agents** · **Lifelong Learning Agents**
 
+Inspired by UW [Living Papers](https://github.com/uwdata/living-papers) (interactive scholarly articles) — we agentify discovery + mentoring on top of that interaction model.
+
+Repo: https://github.com/SaahithV6/combo-papers  
+Butterbase app: `app_wkr61q0xkhs8` (`combo-papers`) — schema applied, not deployed yet.
+
 ---
 
 ## Why this is not a search product
