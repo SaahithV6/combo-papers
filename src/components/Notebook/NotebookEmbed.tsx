@@ -15,6 +15,7 @@ interface NotebookData {
   cells: NotebookCellType[]
   sandboxUrl?: string
   daytonaWorkspaceId?: string
+  colabUrl?: string
   status: string
 }
 
@@ -134,14 +135,53 @@ export default function NotebookEmbed({ paper, isOpen, onClose, onCellRun }: Not
       </div>
 
       {/* Footer */}
-      <div className="px-4 py-2 text-xs border-t border-surface-2 text-text-muted">
-        {notebook?.sandboxUrl ? (
-          <a href={notebook.sandboxUrl} target="_blank" rel="noopener noreferrer" className="text-teal">
-            Open in Daytona ↗
-          </a>
-        ) : (
-          <span className="text-teal">⚡ Running in browser via Pyodide</span>
-        )}
+      <div className="px-4 py-2 text-xs border-t border-surface-2 text-text-muted flex items-center justify-between gap-2 flex-wrap">
+        <span className="text-teal">⚡ In-page Pyodide · numpy/matplotlib base set</span>
+        <div className="flex gap-3">
+          {notebook?.cells && (
+            <button
+              type="button"
+              className="text-teal underline"
+              onClick={() => {
+                const nb = {
+                  nbformat: 4,
+                  nbformat_minor: 5,
+                  metadata: {
+                    kernelspec: { name: 'python3', display_name: 'Python 3' },
+                    language_info: { name: 'python' },
+                  },
+                  cells: notebook.cells.map((c) => ({
+                    cell_type: c.type === 'code' ? 'code' : 'markdown',
+                    metadata: {},
+                    source: c.content.split('\n').map((line, i, arr) =>
+                      i < arr.length - 1 ? `${line}\n` : line
+                    ),
+                    ...(c.type === 'code' ? { outputs: [], execution_count: null } : {}),
+                  })),
+                }
+                const blob = new Blob([JSON.stringify(nb, null, 2)], {
+                  type: 'application/json',
+                })
+                const a = document.createElement('a')
+                a.href = URL.createObjectURL(blob)
+                a.download = `${(paper.title || 'notebook').slice(0, 40).replace(/\W+/g, '_')}.ipynb`
+                a.click()
+              }}
+            >
+              Download .ipynb
+            </button>
+          )}
+          {notebook?.colabUrl && (
+            <a href={notebook.colabUrl} target="_blank" rel="noopener noreferrer" className="text-amber">
+              Open Colab ↗
+            </a>
+          )}
+          {notebook?.sandboxUrl && (
+            <a href={notebook.sandboxUrl} target="_blank" rel="noopener noreferrer" className="text-teal">
+              Daytona ↗
+            </a>
+          )}
+        </div>
       </div>
     </div>
   )

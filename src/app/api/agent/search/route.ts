@@ -7,6 +7,7 @@ import { PaperMetadata } from '@/lib/types'
 import { mentorOrient } from '@/lib/agent/mentor'
 import type { LearnerProfile } from '@/lib/agent/types'
 import {
+  buildLibraryDiscoveryPlan,
   parseInstitutionalEmail,
   rankForInstitutionalAccess,
   resolveJournalAccess,
@@ -93,21 +94,27 @@ export async function POST(request: NextRequest) {
       papers = papers.slice(0, 20)
     }
 
-    // Institutional journal upgrade pass (DOI → Unpaywall published version)
+    // Institutional upgrade: Unpaywall OA + OpenAthens publisher links + UC Library Search
+    let library = null
     if (institutional?.isInstitutional) {
       papers = rankForInstitutionalAccess(papers, institutional)
+      library = buildLibraryDiscoveryPlan(query, institutional)
       const withDoi = papers.filter((p) => p.doi).slice(0, 5)
       await Promise.all(
         withDoi.map(async (paper) => {
           const resolved = await resolveJournalAccess(paper.doi!, institutional)
           if (resolved?.pdfUrl) {
             paper.pdfUrl = resolved.pdfUrl
-            if (resolved.journal) paper.venue = resolved.journal
-            paper.relevanceReason = `${paper.relevanceReason || 'Relevant'} · journal access via ${institutional.domain}`
           }
+          if (resolved?.accessUrl) {
+            paper.url = resolved.accessUrl
+            paper.sourceUrl = resolved.accessUrl
+          }
+          if (resolved?.journal) paper.venue = resolved.journal
+          paper.relevanceReason = `${paper.relevanceReason || 'Relevant'} · UCSC OpenAthens / ${institutional.domain}`
         })
       )
-      source = `${source}+institutional`
+      source = `${source}+ucsc-library`
     }
 
     const profile: LearnerProfile = {
@@ -145,10 +152,12 @@ export async function POST(request: NextRequest) {
       papers,
       source,
       mentor,
+      library,
       institutional: institutional
         ? {
             domain: institutional.domain,
             isInstitutional: institutional.isInstitutional,
+            openAthensDomain: institutional.openAthensDomain || null,
           }
         : null,
     })

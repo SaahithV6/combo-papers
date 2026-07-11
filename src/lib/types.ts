@@ -109,6 +109,7 @@ export interface PaperSource {
 
 export interface Paper {
   _id?: string
+  id?: string
   threadId: string
   arxivId?: string
   title: string

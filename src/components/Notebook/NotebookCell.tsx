@@ -68,7 +68,7 @@ export default function NotebookCell({ cell, workspaceId, onRun }: NotebookCellP
         msg.includes("No packages found")
       setOutputError(
         isPyodidePackageError
-          ? "Some packages aren't available in the browser (Pyodide). Use the Daytona sandbox for full Python environment support."
+          ? "That package isn't in the in-page runtime. Stick to numpy/matplotlib/scipy/pandas/sklearn, or Download .ipynb / Open Colab from the notebook footer."
           : msg
       )
     } finally {

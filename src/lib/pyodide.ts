@@ -44,7 +44,6 @@ function getWorker(): Worker {
           pending.reject(new Error(error || 'Unknown error'))
         }
       } else {
-        // Initialization error — reject all pending ready callbacks
         for (const p of pendingReady) p.reject(new Error(error || 'Pyodide init failed'))
         pendingReady = []
       }
@@ -57,6 +56,9 @@ function getWorker(): Worker {
     for (const p of pendingRuns.values()) p.reject(new Error(e.message))
     pendingRuns.clear()
   }
+
+  // Critical: worker only becomes ready after an explicit init
+  worker.postMessage({ type: 'init' })
 
   return worker
 }

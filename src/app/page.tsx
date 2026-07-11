@@ -25,6 +25,8 @@ export default function HomePage() {
   const [searchSource, setSearchSource] = useState<string>('')
   const [mentor, setMentor] = useState<MentorTurn | null>(null)
   const [institutionalDomain, setInstitutionalDomain] = useState<string | null>(null)
+  const [lastQuery, setLastQuery] = useState('')
+  const [library, setLibrary] = useState<Record<string, unknown> | null>(null)
 
   const handleSearch = async (query: string) => {
     setStatus('searching')
@@ -33,6 +35,8 @@ export default function HomePage() {
     setSelectedIds([])
     setProcessingStatus({})
     setMentor(null)
+    setLastQuery(query)
+    setLibrary(null)
 
     try {
       const response = await fetch('/api/agent/search', {
@@ -41,7 +45,7 @@ export default function HomePage() {
         body: JSON.stringify({
           query,
           userId: user?.id || 'anonymous',
-          email: user?.email || undefined,
+          email: (user?.email as string | undefined) || 'sarveera@ucsc.edu',
         }),
       })
 
@@ -52,6 +56,7 @@ export default function HomePage() {
       setSearchSource(data.source || 'hybrid')
       setMentor(data.mentor || null)
       setInstitutionalDomain(data.institutional?.domain || null)
+      setLibrary(data.library || null)
       setStatus('results')
       setSelectedIds((data.papers || []).slice(0, 5).map((p: PaperMetadata) => p.id))
     } catch (e) {
@@ -78,6 +83,7 @@ export default function HomePage() {
     setStatus('processing')
 
     const selected = papers.filter((p) => p.id && selectedIds.includes(p.id))
+    const query = lastQuery || mentor?.plan?.query || 'research topic'
 
     const processPromises = selected.map(async (paper) => {
       setProcessingStatus((prev) => ({ ...prev, [paper.id!]: 'processing...' }))
@@ -92,7 +98,11 @@ export default function HomePage() {
         if (!response.ok) throw new Error('Processing failed')
 
         const data = await response.json()
-        const processedPaper: ProcessedPaper = { ...data.paper, id: paper.id }
+        const processedPaper: ProcessedPaper = {
+          ...data.paper,
+          id: paper.id,
+          relevanceReason: paper.relevanceReason || data.paper?.relevanceReason,
+        }
 
         try {
           sessionStorage.setItem(`paper:${paper.id}`, JSON.stringify(processedPaper))
@@ -108,11 +118,78 @@ export default function HomePage() {
       }
     })
 
-    await Promise.allSettled(processPromises)
-    const firstReady = selected[0]
-    if (firstReady) {
-      router.push(`/paper/${encodeURIComponent(firstReady.id!)}`)
+    const settled = await Promise.all(processPromises)
+    const ready = settled.filter(Boolean) as ProcessedPaper[]
+
+    if (ready.length === 0) {
+      setError('No papers processed successfully')
+      setStatus('results')
+      return
     }
+
+    // Multi-paper: build shareable experience + conflict analysis, open thread
+    if (ready.length >= 2) {
+      let conflicts = null
+      try {
+        const conflictRes = await fetch('/api/agent/conflicts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query,
+            userId: user?.id || 'anonymous',
+            papers: ready.map((p) => ({
+              id: p.id,
+              title: p.title,
+              venue: p.venue,
+              year: p.year,
+              tldr: p.tldr,
+              relevanceReason: p.relevanceReason,
+            })),
+          }),
+        })
+        if (conflictRes.ok) {
+          const cdata = await conflictRes.json()
+          conflicts = cdata.analysis
+        }
+      } catch {
+        /* non-blocking */
+      }
+
+      const saveRes = await fetch('/api/experiences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query,
+          title: mentor?.plan?.title || `Learning path: ${query}`,
+          papers: ready,
+          conflicts,
+          plan: mentor?.plan || null,
+          library,
+          userId: user?.id || user?.email || 'anonymous',
+        }),
+      })
+
+      const saveData = saveRes.ok ? await saveRes.json() : { id: `local_${Date.now()}` }
+      const experience = {
+        id: saveData.id,
+        query,
+        title: mentor?.plan?.title || `Learning path: ${query}`,
+        papers: ready,
+        conflicts,
+        plan: mentor?.plan || null,
+        library,
+      }
+      try {
+        sessionStorage.setItem(`thread:${saveData.id}`, JSON.stringify(experience))
+      } catch {
+        /* ignore */
+      }
+      router.push(`/thread/${encodeURIComponent(saveData.id)}`)
+      return
+    }
+
+    // Single paper: go straight to Living Page
+    router.push(`/paper/${encodeURIComponent(ready[0].id!)}`)
   }
 
   const anyComplete = selectedIds.some((id) => processingStatus[id] === 'complete')
@@ -175,8 +252,7 @@ export default function HomePage() {
             className="text-lg mb-8 max-w-xl mx-auto leading-relaxed"
             style={{ color: '#9ca3af', fontFamily: 'IBM Plex Serif, serif' }}
           >
-            Not a paper search box — a persistent mentor that plans your path, remembers what
-            you struggle with, and turns research into interactive learning that compounds.
+            Not a paper search box — a mentor that pulls many papers on one topic, surfaces conflicts with pros/cons, and turns literature into shareable Living Pages with embeddable notebooks.
           </p>
 
           <button
@@ -326,33 +402,33 @@ export default function HomePage() {
             {[
               {
                 icon: '◎',
-                title: 'Persistent Mentor',
-                desc: 'Plans curricula, tracks gaps, adapts over sessions via EverOS memory — not one-shot Q&A.',
+                title: 'Multi-paper mentor',
+                desc: 'One query → a learning path across papers. When methods conflict, see pros/cons and choose an approach.',
               },
               {
                 icon: '∑',
-                title: 'Living Papers',
-                desc: 'Equations, variables, evidence chains, and runnable notebooks — the paper becomes the classroom.',
+                title: 'Living Pages',
+                desc: 'Equations, variables, evidence chains, rabbit holes — the paper becomes the classroom.',
+              },
+              {
+                icon: '⌬',
+                title: 'In-page notebooks',
+                desc: 'Embeddable Pyodide labs with a numpy/matplotlib base set, plus .ipynb download / Colab.',
               },
               {
                 icon: '◈',
-                title: 'Journal-Grade Access',
-                desc: 'Institutional email unlocks Unpaywall + library proxy paths beyond arXiv preprints.',
-              },
-              {
-                icon: '?',
-                title: 'Prerequisite Agent',
-                desc: '"I don\'t understand" surfaces the missing concept and rewires the learning plan.',
+                title: 'UCSC Library + OpenAthens',
+                desc: 'Articles and books via UC Library Search; closed full-text after one CruzID click.',
               },
               {
                 icon: '⟳',
-                title: 'Butterbase Backend',
-                desc: 'Auth, Postgres, storage, functions, deploy — zero config so you ship the agent, not the plumbing.',
+                title: 'Save & share',
+                desc: 'Turn a session into a shareable research experience others can reopen and learn from.',
               },
               {
                 icon: '⚡',
-                title: 'Agent-Native Path',
-                desc: 'Built for Beta Fund: pedagogy + deployment + trust, not just model capability.',
+                title: 'EverOS memory',
+                desc: 'Remembers gaps and trajectories so onboarding compounds — not one-shot chat.',
               },
             ].map(({ icon, title, desc }) => (
               <div
